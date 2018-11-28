@@ -68,7 +68,7 @@ func initCommands() {
 			return
 		}
 
-		go StartNetwork(uint16(port))
+		StartNetwork(uint16(port))
 	}}
 
 	commands["/disconnect"] = &command{"Disconnects from a network.", "", func (args[] string) {
@@ -76,7 +76,23 @@ func initCommands() {
 	}}
 
 	commands["/connect"] = &command{"Connects to an existing network", "<dest> <server port>", func (args[] string) {
+		if args == nil || len(args) != 2 {
+			UserError("invalid usage")
+			return
+		}
 
+		port, err := strconv.ParseUint(args[1], 10, 16)
+
+		if err != nil {
+			UserError("failed to parse port number")
+			return
+		}
+
+		JoinNetwork(args[0], uint16(port))
+	}}
+
+	commands["/us"] = &command{"Update status", "", func (args[] string) {
+		UpdateStatus()
 	}}
 }
 

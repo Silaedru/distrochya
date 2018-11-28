@@ -76,3 +76,17 @@ func (l *NodeSyncLinkedList) Find(id uint64) *Node {
 
 	return nil
 }
+
+func (l *NodeSyncLinkedList) FindSingleByRelation(r uint8) *Node {
+	cn := l.head
+
+	for cn != nil {
+		if cn.data.relation == r {
+			return cn.data
+		}
+
+		cn = cn.next
+	}
+
+	return nil
+}

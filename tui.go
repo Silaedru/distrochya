@@ -127,7 +127,7 @@ func UpdateStatus() {
 	var ns string
 
 	switch NetworkState {
-		case none: ns = "none"
+		case noNetwork: ns = "noNetwork"
 		case singleNode: ns = "Single Node"
 		case twoNodes: ns = "Two Nodes"
 		case ring: ns = "Ring"
@@ -142,7 +142,7 @@ func UpdateStatus() {
 			var relation string
 
 			switch cn.data.relation {
-				case unknown: relation = "unknown"
+				case none: relation = "none"
 				case next: relation = "next"
 				case twiceNext: relation = "twiceNext"
 				case prev: relation = "prev"
@@ -155,7 +155,7 @@ func UpdateStatus() {
 				case assimilated: state = "assimilated"
 			}
 
-			nodes = fmt.Sprintf("%s\n   -> %d (listening on %s): %s, %s", nodes, cn.data.Id, IdToEndpoint(cn.data.Id), state, relation)
+			nodes = fmt.Sprintf("%s\n   -> 0x%X (listening on %s): %s, %s", nodes, cn.data.Id, IdToEndpoint(cn.data.Id), state, relation)
 			cn = cn.next
 		}
 	}
@@ -305,6 +305,8 @@ func InitializeTui() {
 
 		return nil
 	})
+
+	UpdateStatus()
 
 	gui.MainLoop()
 }
