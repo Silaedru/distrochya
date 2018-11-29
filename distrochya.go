@@ -30,6 +30,10 @@ func ChatMessage(m string) {
 
 }
 
+func DebugLog(m string) {
+	AppendLog("DEBUG: " + m)
+}
+
 func Log(m string) {
 	AppendLog(m)
 }

@@ -32,12 +32,12 @@ func (e *chatInput) onEnter(v *gocui.View) {
 	v.SetCursor(0, 0)
 	v.SetOrigin(0, 0)
 
-	if input[0] == '/' {
+	if len(input) > 1 && input[0] == '/' {
 		args := strings.Split(input, " ")
 		ProcessCommand(args[0], args[1:])
 	} else {
 		ChatMessage(input)
-	}
+	}	
 }
 
 func (e *chatInput) Edit(v *gocui.View, key gocui.Key, ch rune, mod gocui.Modifier) {
@@ -57,8 +57,8 @@ func (e *chatInput) Edit(v *gocui.View, key gocui.Key, ch rune, mod gocui.Modifi
 			v.SetCursor(0, 0)
 			v.SetOrigin(0, 0)
 
-		case key == gocui.KeyArrowDown: v.SetCursor(len(v.Buffer())-1, 0)
-		case key == gocui.KeyEnd: v.SetCursor(len(v.Buffer())-1, 0)
+		case key == gocui.KeyArrowDown: v.MoveCursor(len(v.Buffer())-1, 0, false)
+		case key == gocui.KeyEnd: v.MoveCursor(len(v.Buffer())-1, 0, false)
 
 		case key == gocui.KeyF1: return
 		case key == gocui.KeyF10: return
@@ -127,7 +127,7 @@ func UpdateStatus() {
 	var ns string
 
 	switch NetworkState {
-		case noNetwork: ns = "noNetwork"
+		case noNetwork: ns = "No Network"
 		case singleNode: ns = "Single Node"
 		case twoNodes: ns = "Two Nodes"
 		case ring: ns = "Ring"
@@ -301,7 +301,7 @@ func InitializeTui() {
 			panic(err)
 		}
 
-		fmt.Fprint(controlsView, "\x1b[30;46m PgUp: Scroll users up \x1b[0m \x1b[30;46m PgDn: Scroll users down \x1b[0m \x1b[30;46m F1: Help \x1b[0m \x1b[30;46m F10: Quit \x1b[0m")
+		fmt.Fprint(controlsView, "\x1b[30;46m PgUp/PgDn: Scroll users \x1b[0m \x1b[30;46m F1: Help \x1b[0m \x1b[30;46m F10: Quit \x1b[0m")
 
 		return nil
 	})

@@ -115,7 +115,7 @@ func (n *Node) handleClient() {
 
 		if err != nil {
 			Log(fmt.Sprintf("Client 0x%X: connection lost", n.Id))
-			Log(fmt.Sprintf("DEBUG 0x%X: %s", n.Id, err.Error()))
+			DebugLog(fmt.Sprintf("0x%X: %s", n.Id, err.Error()))
 
 			n.handleDisconnect()
 			return
@@ -197,7 +197,6 @@ func (n *Node) processMessage(m string) bool {
 				nextNode.state = assimilated
 				nextNode.relation = next
 				nextNode.Id = nextId
-				go nextNode.handleClient()
 
 				 //if nextNode.Id != n.Id {
 				nextNode.sendMessage(nextNodeInfoReq, strconv.FormatUint(NodeId, 10))				
@@ -248,7 +247,6 @@ func (n *Node) processMessage(m string) bool {
 				twiceNextNode.state = assimilated
 				twiceNextNode.relation = twiceNext
 				twiceNextNode.Id = twiceNextNodeId
-				go twiceNextNode.handleClient()
 				twiceNextNode.sendMessage(distantNeighborConnect, strconv.FormatUint(NodeId, 10))
 
 				Nodes.Add(twiceNextNode)
@@ -320,7 +318,10 @@ func Connect(a string) *Node {
 		return nil
 	}
 
-	return &Node{0, none, new, c}
+	n := &Node{0, none, new, c}
+	go n.handleClient()
+
+	return n
 }
 
 func Disconnect() {
@@ -367,7 +368,7 @@ func startServer(p uint16, newNetwork bool) {
 		c, err := server.Accept()
 
 		if err != nil {
-			Log("DEBUG Server error: " + err.Error())
+			DebugLog("Server error: " + err.Error())
 			return
 		}
 
@@ -397,7 +398,5 @@ func JoinNetwork(a string, p uint16) {
 
 	networkNode.state = assimilated
 	networkNode.relation = prev
-	go networkNode.handleClient()
 	networkNode.sendMessage(connect, strconv.FormatUint(NodeId, 10), strconv.Itoa(next))
-	//networkNode.Id = 0xFAFAFAFAFAFAFAFA
 }
