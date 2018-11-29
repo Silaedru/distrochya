@@ -27,6 +27,7 @@ const (
 	prev
 	twicePrev
 
+	leader
 	follower
 )
 
@@ -49,12 +50,8 @@ const (
 const (
 	magic = "d"
 
-	connect = "con"  				// params=id;relation
-	distantNeighborConnect = "dnc" 	// params=id
-	//disconnect = "dis" 			// params=
-	nextNodeInfoReq = "niq"			// params=id
-	nextNodeInfoRes = "nir"			// params=next_id
-	netinfo = "nei"					// params=my_id;next_id;leader_id
+	connect = "con"  				// params=id;requested_relation
+	netinfo = "nei"					// params=my_id;next_id;twicenext_id;leader_id
 )
 
 var server net.Listener
@@ -75,6 +72,12 @@ func resetNode() {
 	}
 
 	Nodes = nil
+}
+
+func initNode(ip uint32, p uint16) {
+	resetTime()
+	CreateNodeId(ip, p, 0)
+	Nodes = NewNodeSyncLinkedList()
 }
 
 func getIp() uint32 {
@@ -124,141 +127,138 @@ func (n *Node) handleClient() {
 
 		if !n.processMessage(data) {
 			n.disconnect()
+			Log(fmt.Sprintf("Invalid message from client 0x%X, disconnecting", n.Id))
+			DebugLog("IMSG: " + data)
 		}
 
-		AppendChat(data)
+		DebugLog("RECV: ==" + data + "==")
 	}
 }
 
 func (n *Node) disconnect() {
-	//n.sendMessage()
 	n.connection.Close()
 }
 
 func (n *Node) sendMessage(m ...string) {
-	msg := magic
+	msg := fmt.Sprintf("%s;%d", magic, advanceTime())
 
 	for _, s := range(m) {
 		msg += ";" + s
 	}
-	AppendChat("== " + msg + " ==")
+
+	DebugLog("SEND: ==" + msg + "==")
 	n.connection.Write([]byte(msg + "\n"))
 }
-
 // returns false on failure
 func (n *Node) processMessage(m string) bool {
 	msg := strings.Split(m, ";")
 
-	if msg[0] != magic {
+	if len(msg) < 3 || msg[0] != magic {
 		return false
 	} else {
-		switch msg[1] {
+		recvdTime, err := strconv.ParseUint(msg[1], 10, 64)
+
+		if err != nil {
+			DebugLog("processMessage timestamp parse failure")
+			return false
+		}
+
+		time := updateTime(recvdTime)
+		parseStartIx := 3
+
+		switch msg[2] {
+			// node would like to connect
 			case connect:
-				id, err := strconv.ParseUint(msg[2], 10, 64)
+				id, err := strconv.ParseUint(msg[parseStartIx], 10, 64)
 				if err != nil {
 					return false
 				}
+
 				n.Id = id
 
-				rel, err := strconv.ParseUint(msg[3], 10, 8)
+				rel, err := strconv.ParseUint(msg[parseStartIx+1], 10, 8)
 				if err != nil {
 					return false
-				}	
+				}
+
 				n.relation = uint8(rel)
 
+
+				Log(fmt.Sprintf("%d: Received connect message, remote_id=%X, relation=%d", time, id, rel))
 				n.handleConnect()
 
+			// response to initial connect request containing basic network info
 			case netinfo:
-				//TODO: handle edge case: two node network 
-				nodeId, err := strconv.ParseUint(msg[2], 10, 64)
+				nodeId, err := strconv.ParseUint(msg[parseStartIx], 10, 64)
 				if err != nil {
-					panic("0")
+					DebugLog("NETINFO nodeId err")
 					return false
 				}
+
+				nextId, err := strconv.ParseUint(msg[parseStartIx+1], 10, 64)
+				if err != nil {
+					DebugLog("NETINFO nextId err")
+					return false
+				}
+
+				twiceNextId, err := strconv.ParseUint(msg[parseStartIx+2], 10, 64)
+				if err != nil {
+					DebugLog("NETINFO nextId err")
+					return false
+				}
+
+				leaderId, err := strconv.ParseUint(msg[parseStartIx+3], 10, 64)
+				if err != nil {
+					DebugLog("NETINFO leaderId err")
+					return false
+				}
+
 				n.Id = nodeId
-
-				nextId, err := strconv.ParseUint(msg[3], 10, 64)
-				if err != nil {
-					panic("1")
-					return false
-				}
-
-				leaderId, err := strconv.ParseUint(msg[4], 10, 64)
-				if err != nil {
-					panic("2")
-					return false
-				}
-				
+				Log(fmt.Sprintf("%d: Received netinfo message, remote_id=%X, next_id=%X, twice_next_id=%X, leader_id=%X", time, nodeId, nextId, twiceNextId, leaderId))
+					
 				nextNode := Connect(IdToEndpoint(nextId))
 				if nextNode == nil {
-					panic("neinfo failed")
-					//return false
+					DebugLog("NETINFO nextNode connect failed")
+					return false
 				}
 				nextNode.state = assimilated
 				nextNode.relation = next
 				nextNode.Id = nextId
+				Log(fmt.Sprintf("Connection to remote node was successful, remote_id=%X", nextId))
 
-				 //if nextNode.Id != n.Id {
-				nextNode.sendMessage(nextNodeInfoReq, strconv.FormatUint(NodeId, 10))				
-				 //} //-- ale pak zustava anonymni
+				// notify the next node who we are
+				nextNode.sendMessage(connect, strconv.FormatUint(NodeId, 10), strconv.Itoa(prev))
+
+				Log(fmt.Sprintf("Connection to twice remote node was successful, remote_id=%X", nextId))
+
+				// if the next node is this node then there are only 2 nodes in total
+				if nextNode.Id == n.Id {
+					NetworkState = twoNodes
+				} else {
+					NetworkState = ring
+
+					if twiceNextId == 0 {
+						twiceNextId = Nodes.FindSingleByRelation(prev).Id
+					}
+
+
+					twiceNextNode := Connect(IdToEndpoint(twiceNextId))
+					if twiceNextNode == nil {
+						DebugLog("NETINFO twiceNextNode connect failed")
+						return false
+					}
+					twiceNextNode.state = assimilated
+					twiceNextNode.relation = twiceNext
+					twiceNextNode.Id = twiceNextId
+
+					// notify the twice next node who we are
+					twiceNextNode.sendMessage(connect, strconv.FormatUint(NodeId, 10), strconv.Itoa(twicePrev))
+					
+				}
+
 				if leaderId != 0 {
 					HandleNewLeader(leaderId)
 				}
-
-
-			case nextNodeInfoReq:
-				if n.state == new {
-					n.state = assimilated
-					n.relation = prev
-
-					id, err := strconv.ParseUint(msg[2], 10, 64)
-					if err != nil {
-						return false
-					}
-					n.Id = id
-				}
-
-				nextNode := Nodes.FindSingleByRelation(next)
-				if nextNode == nil {
-					//return false
-					panic("invalid state: join requested without next node present")
-				}
-
-				n.sendMessage(nextNodeInfoRes, strconv.FormatUint(nextNode.Id, 10))
-	
-			case nextNodeInfoRes:
-				// kontrolovat jestli jsem jeste stale v ringu, mohlo se rozpadnout
-				twiceNextNode := Nodes.FindSingleByRelation(twiceNext)
-				if twiceNextNode != nil {
-					twiceNextNode.disconnect()
-					Nodes.Remove(twiceNextNode.Id)
-				}
-
-				twiceNextNodeId, err := strconv.ParseUint(msg[2], 10, 64)
-				if err != nil {
-					return false
-				}
-
-				twiceNextNode = Connect(IdToEndpoint(twiceNextNodeId))
-				if twiceNextNode == nil {
-					//return false
-					panic("second neighbor connection failed")
-				}
-				twiceNextNode.state = assimilated
-				twiceNextNode.relation = twiceNext
-				twiceNextNode.Id = twiceNextNodeId
-				twiceNextNode.sendMessage(distantNeighborConnect, strconv.FormatUint(NodeId, 10))
-
-				Nodes.Add(twiceNextNode)
-
-			case distantNeighborConnect:
-				n.state = assimilated
-				n.relation = twicePrev
-				id, err := strconv.ParseUint(msg[2], 10, 64)
-				if err != nil {
-					return false
-				}
-				n.Id = id
 		}
 	}
 
@@ -272,41 +272,39 @@ func (n *Node) handleDisconnect() {
 
 func (n *Node) handleConnect() {
 	if n.relation == next {
-			if NetworkState == singleNode {
-				n.sendMessage(netinfo, strconv.FormatUint(NodeId, 10), strconv.FormatUint(NodeId, 10), strconv.FormatUint(LeaderId, 10))
-				n.relation = next
-				n.state = assimilated
-				NetworkState = twoNodes
-			} else {
-				oldNext := Nodes.FindSingleByRelation(next)
-				if oldNext == nil {
-					panic("invalid network state: twoNodes without next node")
-				}
+		// new node is joining the network
+		if NetworkState == singleNode {
+			n.sendMessage(netinfo, strconv.FormatUint(NodeId, 10), strconv.FormatUint(NodeId, 10), strconv.Itoa(0), strconv.FormatUint(LeaderId, 10))
+			n.state = assimilated
+			NetworkState = twoNodes
+		} else {
+			var oldTwiceNextId uint64
 
-				if NetworkState == ring {
-					oldTwiceNext := Nodes.FindSingleByRelation(twiceNext)
-					if oldTwiceNext == nil {
-						panic("invalid network state: ring without twiceNext node")
-					}				
-					oldTwiceNext.disconnect()
-				}
-
-				oldNext.state = twiceNext
-
-				n.sendMessage(netinfo, strconv.FormatUint(NodeId, 10), strconv.FormatUint(oldNext.Id, 10), strconv.FormatUint(LeaderId, 10))
-				n.relation = next
-				n.state = assimilated
-				NetworkState = ring
+			if NetworkState == ring {
+				oldTwiceNext := Nodes.FindSingleByRelation(twiceNext)
+				if oldTwiceNext == nil {
+					panic("invalid network state: ring without twiceNext node")
+				}				
+				oldTwiceNextId = oldTwiceNext.Id
+				oldTwiceNext.disconnect()
 			}
-	} else if n.relation == follower {
 
-	} else {
-		// invalid conn relation
-	}
+			oldNext := Nodes.FindSingleByRelation(next)
+			if oldNext == nil {
+				panic("invalid network state: twoNodes or ring without next node")
+			}
+
+			oldNext.relation = twiceNext
+			oldNext.sendMessage(connect, strconv.FormatUint(NodeId, 10), strconv.Itoa(twicePrev), strconv.FormatUint(n.Id, 10))
+
+			n.sendMessage(netinfo, strconv.FormatUint(NodeId, 10), strconv.FormatUint(oldNext.Id, 10), strconv.FormatUint(oldTwiceNextId, 10), strconv.FormatUint(LeaderId, 10))
+			n.state = assimilated
+			NetworkState = ring
+		}
+	} 	
 }
 
 func CreateNodeId(i uint32, p uint16, f uint16) {
-	//NodeId = uint64(getIp()) << 32 | uint64(p) << 16
 	NodeId = uint64(i) << 32 | uint64(p) << 16 | uint64(f)
 }
 
@@ -339,11 +337,6 @@ func Disconnect() {
 }
 
 func startServer(p uint16, newNetwork bool) {
-	if server != nil {
-		UserError("already connected")
-		return
-	}
-
 	l, err := net.Listen("tcp4", fmt.Sprintf(":%d", p))
 
 	if err != nil {
@@ -352,7 +345,8 @@ func startServer(p uint16, newNetwork bool) {
 	}
 
 	server = l
-
+	Log(fmt.Sprintf("Server started, listening on port %d. nodeId=0x%X", p, NodeId))
+	
 	if newNetwork {
 		NetworkState = singleNode
 		UserEvent(fmt.Sprintf("network created, listening on port %d", p))
@@ -360,7 +354,6 @@ func startServer(p uint16, newNetwork bool) {
 		HandleNewLeader(NodeId)
 	}
 
-	Log(fmt.Sprintf("Server started, listening on port %d. nodeId=0x%X", p, NodeId))
 	UpdateStatus()
 
 	// incoming connections
@@ -378,21 +371,29 @@ func startServer(p uint16, newNetwork bool) {
 }
 
 func StartNetwork(p uint16) {
-	CreateNodeId(getIp(), p, 0)
-	Nodes = NewNodeSyncLinkedList()
+	if server != nil {
+		UserError("already connected")
+		return
+	}
 
+	initNode(getIp(), p)
 	go startServer(p, true)
 }
 
 func JoinNetwork(a string, p uint16) {
-	CreateNodeId(getIp(), p, 0)
-	Nodes = NewNodeSyncLinkedList()
+	if server != nil {
+		UserError("already connected")
+		return
+	}
 
+	initNode(getIp(), p)
 	go startServer(p, false)
 
 	networkNode := Connect(a)
+
 	if networkNode == nil {
-		UserError("Failed to connect to a remote network")
+		Disconnect()
+		UserError("Failed to connect to the remote network")
 		return
 	}
 

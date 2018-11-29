@@ -122,7 +122,7 @@ func UpdateStatus() {
 		return
 	}
 
-	Log("UpdateStatus")
+	DebugLog("UpdateStatus")
 
 	var ns string
 
@@ -160,11 +160,13 @@ func UpdateStatus() {
 		}
 	}
 
-	overwriteView(statusViewName, fmt.Sprintf("Network state: %s\n" +
+	overwriteView(statusViewName, fmt.Sprintf("" +
+		 "Logical time: %d\n"+
+		 "Network state: %s\n" +
 		 "NodeId:   0x%X (%s)\n"+
 		 "LeaderId: 0x%X (%s)\n"+
 		 "\n"+
-		 "Connected nodes:\n%s\n\nEND", ns, NodeId, IdToEndpoint(NodeId), LeaderId, IdToEndpoint(LeaderId), nodes))
+		 "Connected nodes:\n%s\n\nEND", readTime(), ns, NodeId, IdToEndpoint(NodeId), LeaderId, IdToEndpoint(LeaderId), nodes))
 }
 
 func AppendLog(s string) {
@@ -188,7 +190,7 @@ func layout(g *gocui.Gui) error {
 	curY := 0
 
 	if DebugEnabled {
-		logViewWidth := maxW * 2 / 3
+		logViewWidth := maxW * 3 / 5
 		logViewHeight := maxH / 2
 
 		logView, err := g.SetView(logViewName, 0, curY, logViewWidth, logViewHeight)

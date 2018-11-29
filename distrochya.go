@@ -12,6 +12,7 @@ type command struct {
 }
 
 var DebugEnabled bool = true
+var DebugLogEnabled bool = true
 var commands map[string]*command
 
 
@@ -31,6 +32,10 @@ func ChatMessage(m string) {
 }
 
 func DebugLog(m string) {
+	if !DebugLogEnabled {
+		return
+	}
+
 	AppendLog("DEBUG: " + m)
 }
 
@@ -97,6 +102,19 @@ func initCommands() {
 
 	commands["/us"] = &command{"Update status", "", func (args[] string) {
 		UpdateStatus()
+	}}
+
+	commands["/a"] = &command{"/start 9999", "", func (args[] string) {
+		ProcessCommand("/start", []string{"9999"})
+	}}
+	commands["/b"] = &command{"/connect localhost:9999 9998", "", func (args[] string) {
+		ProcessCommand("/connect", []string{"localhost:9999", "9998"})
+	}}
+	commands["/c"] = &command{"/connect localhost:9999 9997", "", func (args[] string) {
+		ProcessCommand("/connect", []string{"localhost:9999", "9997"})
+	}}
+	commands["/d"] = &command{"/connect localhost:9999 9996", "", func (args[] string) {
+		ProcessCommand("/connect", []string{"localhost:9999", "9996"})
 	}}
 }
 

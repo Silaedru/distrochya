@@ -19,6 +19,7 @@ func NewNodeSyncLinkedList() *NodeSyncLinkedList {
 
 func (l *NodeSyncLinkedList) Add(n *Node) {
 	l.lock.Lock()
+	defer l.lock.Unlock()
 
 	newNode := &nodeSynclinkedListNode{n, nil}
 
@@ -33,8 +34,6 @@ func (l *NodeSyncLinkedList) Add(n *Node) {
 
 		cn.next = newNode
 	}
-
-	l.lock.Unlock()
 }
 
 func (l *NodeSyncLinkedList) Remove(id uint64) {
@@ -43,6 +42,7 @@ func (l *NodeSyncLinkedList) Remove(id uint64) {
 	}
 
 	l.lock.Lock()
+	defer l.lock.Unlock()
 
 	cn := l.head
 
@@ -59,11 +59,12 @@ func (l *NodeSyncLinkedList) Remove(id uint64) {
 			}
 		}
 	}
-
-	l.lock.Unlock()
 }
 
 func (l *NodeSyncLinkedList) Find(id uint64) *Node {
+	l.lock.Lock()
+	defer l.lock.Unlock()
+
 	cn := l.head
 
 	for cn != nil {
@@ -78,6 +79,9 @@ func (l *NodeSyncLinkedList) Find(id uint64) *Node {
 }
 
 func (l *NodeSyncLinkedList) FindSingleByRelation(r uint8) *Node {
+	l.lock.Lock()
+	defer l.lock.Unlock()
+
 	cn := l.head
 
 	for cn != nil {
