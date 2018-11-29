@@ -1,6 +1,7 @@
 package main
 
 import "sync"
+import "fmt"
 
 type nodeSynclinkedListNode struct {
 	data *Node
@@ -18,6 +19,7 @@ func NewNodeSyncLinkedList() *NodeSyncLinkedList {
 }
 
 func (l *NodeSyncLinkedList) Add(n *Node) {
+	AppendChat(fmt.Sprintf("ADD CALLED: %X", n.Id))
 	l.lock.Lock()
 	defer l.lock.Unlock()
 
@@ -37,6 +39,7 @@ func (l *NodeSyncLinkedList) Add(n *Node) {
 }
 
 func (l *NodeSyncLinkedList) Remove(id uint64) {
+	AppendChat(fmt.Sprintf("REMOVE CALLED: %X", id))
 	if l.head == nil {
 		return
 	}
@@ -85,6 +88,23 @@ func (l *NodeSyncLinkedList) FindSingleByRelation(r uint8) *Node {
 	cn := l.head
 
 	for cn != nil {
+		if cn.data.relation == r {
+			return cn.data
+		}
+
+		cn = cn.next
+	}
+
+	return nil
+}
+
+func (l *NodeSyncLinkedList) FindSingleByRelationExcludingId(r uint8, id uint64) *Node {
+	l.lock.Lock()
+	defer l.lock.Unlock()
+
+	cn := l.head
+
+	for cn != nil && cn.data.Id != id {
 		if cn.data.relation == r {
 			return cn.data
 		}

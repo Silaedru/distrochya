@@ -52,6 +52,8 @@ const (
 
 	connect = "con"  				// params=id;requested_relation
 	netinfo = "nei"					// params=my_id;next_id;twicenext_id;leader_id
+	requestNextNode = "rnn"			// params=
+	nextNodeInfo = "nni"			// params=next_node_id
 )
 
 var server net.Listener
@@ -183,7 +185,6 @@ func (n *Node) processMessage(m string) bool {
 
 				n.relation = uint8(rel)
 
-
 				Log(fmt.Sprintf("%d: Received connect message, remote_id=%X, relation=%d", time, id, rel))
 				n.handleConnect()
 
@@ -228,7 +229,6 @@ func (n *Node) processMessage(m string) bool {
 
 				// notify the next node who we are
 				nextNode.sendMessage(connect, strconv.FormatUint(NodeId, 10), strconv.Itoa(prev))
-
 				Log(fmt.Sprintf("Connection to twice remote node was successful, remote_id=%X", nextId))
 
 				// if the next node is this node then there are only 2 nodes in total
@@ -259,6 +259,37 @@ func (n *Node) processMessage(m string) bool {
 				if leaderId != 0 {
 					HandleNewLeader(leaderId)
 				}
+
+			case requestNextNode:
+				nextNode := Nodes.FindSingleByRelation(next)
+
+				if nextNode != nil {
+					//panic("invalid state")
+					n.sendMessage(nextNodeInfo, strconv.FormatUint(nextNode.Id, 10))
+				}
+
+			case nextNodeInfo:
+				nodeId, err := strconv.ParseUint(msg[parseStartIx], 10, 64)
+				if err != nil {
+					DebugLog("nextNodeInfo nodeId err")
+					return false
+				}
+
+				//if NetworkState == twoNodes {
+				/*twiceNextNode := Nodes.FindSingleByRelation(twiceNext)					
+				if twiceNextNode != nil {
+					twiceNextNode.disconnect()
+				}*/
+				if NetworkState == twoNodes {
+					twiceNextNode := Connect(IdToEndpoint(nodeId))
+					twiceNextNode.state = assimilated
+					twiceNextNode.relation = twiceNext
+					twiceNextNode.Id = nodeId
+
+					twiceNextNode.sendMessage(connect, strconv.FormatUint(NodeId, 10), strconv.Itoa(twicePrev))
+					NetworkState = ring
+				}
+				//}
 		}
 	}
 
@@ -301,7 +332,17 @@ func (n *Node) handleConnect() {
 			n.state = assimilated
 			NetworkState = ring
 		}
-	} 	
+	} else if n.relation == twicePrev {
+		n.state = assimilated
+		
+		if NetworkState == twoNodes {
+			n.sendMessage(requestNextNode)
+		}
+	} else if n.relation == prev {
+		n.state = assimilated
+	}	else {
+		panic("xxxxxx")
+	}
 }
 
 func CreateNodeId(i uint32, p uint16, f uint16) {
