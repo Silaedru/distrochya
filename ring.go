@@ -12,59 +12,40 @@ import (
 
 type Node struct {
 	Id uint64
-	relation uint8
-	state uint8
+	relation string
 	connection net.Conn
 }
 
-// node relations
 const (
-	none = iota
+	// node relations
+	none = "none"
+	next = "next"
+	prev = "prev"
+	leader = "leader"
+	follower = "follower"
 
-	next
-	twiceNext
-
-	prev
-	twicePrev
-
-	leader
-	follower
-)
-
-// node states
-const (
-	new = iota
-	assimilated
-)
-
-// network states
-const (
-	noNetwork = iota
-	singleNode
-	twoNodes
-	ring
-)
-
-// messages
-// magic;message;params\n
-const (
+	// messages
+	// magic;message;params\n
 	magic = "d"
-
 	connect = "con"  				// params=id;requested_relation
-	netinfo = "nei"					// params=my_id;next_id;twicenext_id;leader_id
-	requestNextNode = "rnn"			// params=
-	nextNodeInfo = "nni"			// params=next_node_id
+	netinfo = "nei"					// params=node_id;next_id;leader_id
+	closering = "closering"			// params=sender_id
+
+	// network states
+	noNetwork = "noNetwork"
+	singleNode = "singleNode"
+	ring = "ring"
 )
 
 var server net.Listener
-var NetworkState uint8
+var NetworkState string
 var NodeId uint64
 var LeaderId uint64
 var Nodes *NodeSyncLinkedList
 
 func resetNode() {
 	server = nil
-	NetworkState = 0
+	NetworkState = noNetwork
 	NodeId = 0
 	LeaderId = 0
 
@@ -108,9 +89,17 @@ func IdToEndpoint(id uint64) string {
 	return fmt.Sprintf("%d.%d.%d.%d:%d", (ip >> 24) & 0xFF, (ip >> 16) & 0xFF, (ip >> 8) & 0xFF, ip & 0xFF, port)
 }
 
+func IdToString(id uint64) string {
+	return strconv.FormatUint(id, 16)
+}
+
+func StringToId(s string) (uint64, error) {
+	return strconv.ParseUint(s, 16, 64)
+}
+
 func (n *Node) handleClient() {
 	Nodes.Add(n)
-	Log("New client connected")
+	Log("New connection!")
 
 	r := bufio.NewReader(n.connection)
 
@@ -119,7 +108,7 @@ func (n *Node) handleClient() {
 		data, err := r.ReadString('\n')
 
 		if err != nil {
-			Log(fmt.Sprintf("Client 0x%X: connection lost", n.Id))
+			Log(fmt.Sprintf("Client 0x%X disconnected", n.Id))
 			DebugLog(fmt.Sprintf("0x%X: %s", n.Id, err.Error()))
 
 			n.handleDisconnect()
@@ -130,7 +119,7 @@ func (n *Node) handleClient() {
 		if !n.processMessage(data) {
 			n.disconnect()
 			Log(fmt.Sprintf("Invalid message from client 0x%X, disconnecting", n.Id))
-			DebugLog("IMSG: " + data)
+			Log("IMSG: " + data)
 		}
 
 		DebugLog("RECV: ==" + data + "==")
@@ -151,6 +140,7 @@ func (n *Node) sendMessage(m ...string) {
 	DebugLog("SEND: ==" + msg + "==")
 	n.connection.Write([]byte(msg + "\n"))
 }
+
 // returns false on failure
 func (n *Node) processMessage(m string) bool {
 	msg := strings.Split(m, ";")
@@ -169,127 +159,96 @@ func (n *Node) processMessage(m string) bool {
 		parseStartIx := 3
 
 		switch msg[2] {
+
 			// node would like to connect
 			case connect:
-				id, err := strconv.ParseUint(msg[parseStartIx], 10, 64)
+				id, err := StringToId(msg[parseStartIx])
 				if err != nil {
+					DebugLog("CONNECT id err")
 					return false
 				}
 
 				n.Id = id
+				n.relation = msg[parseStartIx+1]
 
-				rel, err := strconv.ParseUint(msg[parseStartIx+1], 10, 8)
-				if err != nil {
-					return false
-				}
-
-				n.relation = uint8(rel)
-
-				Log(fmt.Sprintf("%d: Received connect message, remote_id=%X, relation=%d", time, id, rel))
+				Log(fmt.Sprintf("[%d] Received connect message: remote_id=0x%X, relation=%s", time, n.Id, n.relation))
 				n.handleConnect()
 
 			// response to initial connect request containing basic network info
 			case netinfo:
-				nodeId, err := strconv.ParseUint(msg[parseStartIx], 10, 64)
+				// will happen when response to closering connection is received
+				nodeId, err := StringToId(msg[parseStartIx])
 				if err != nil {
 					DebugLog("NETINFO nodeId err")
 					return false
 				}
 
-				nextId, err := strconv.ParseUint(msg[parseStartIx+1], 10, 64)
+				nextId, err := StringToId(msg[parseStartIx+1])
 				if err != nil {
 					DebugLog("NETINFO nextId err")
 					return false
 				}
 
-				twiceNextId, err := strconv.ParseUint(msg[parseStartIx+2], 10, 64)
-				if err != nil {
-					DebugLog("NETINFO nextId err")
-					return false
-				}
-
-				leaderId, err := strconv.ParseUint(msg[parseStartIx+3], 10, 64)
+				leaderId, err := StringToId(msg[parseStartIx+2])
 				if err != nil {
 					DebugLog("NETINFO leaderId err")
 					return false
 				}
 
 				n.Id = nodeId
-				Log(fmt.Sprintf("%d: Received netinfo message, remote_id=%X, next_id=%X, twice_next_id=%X, leader_id=%X", time, nodeId, nextId, twiceNextId, leaderId))
-					
+				Log(fmt.Sprintf("[%d] Received netinfo: remote_id=0x%X, next_id=0x%X, leader_id=0x%X", time, nodeId, nextId, leaderId))
+				
+				Log(fmt.Sprintf("Attempting to connect to remote node, id=0x%X", nodeId))
 				nextNode := Connect(IdToEndpoint(nextId))
 				if nextNode == nil {
-					DebugLog("NETINFO nextNode connect failed")
+					Log(fmt.Sprintf("Connection to remote node failed!, id=0x%X", nodeId))
 					return false
 				}
-				nextNode.state = assimilated
 				nextNode.relation = next
 				nextNode.Id = nextId
-				Log(fmt.Sprintf("Connection to remote node was successful, remote_id=%X", nextId))
+				Log(fmt.Sprintf("Connection to remote node was successful, id=0x%X", nextId))
 
 				// notify the next node who we are
-				nextNode.sendMessage(connect, strconv.FormatUint(NodeId, 10), strconv.Itoa(prev))
-				Log(fmt.Sprintf("Connection to twice remote node was successful, remote_id=%X", nextId))
+				Log(fmt.Sprintf("Sending connect message: target_id=0x%X, my_id=0x%X, relation=%s", nextNode.Id, NodeId, prev))
+				nextNode.sendMessage(connect, strconv.FormatUint(NodeId, 16), prev)
+				
+				// if we have connected to somebody we have a ring
+				NetworkState = ring
+				Log("Network state changed to ring")
 
-				// if the next node is this node then there are only 2 nodes in total
-				if nextNode.Id == n.Id {
-					NetworkState = twoNodes
-				} else {
-					NetworkState = ring
-
-					if twiceNextId == 0 {
-						twiceNextId = Nodes.FindSingleByRelation(prev).Id
-					}
-
-
-					twiceNextNode := Connect(IdToEndpoint(twiceNextId))
-					if twiceNextNode == nil {
-						DebugLog("NETINFO twiceNextNode connect failed")
-						return false
-					}
-					twiceNextNode.state = assimilated
-					twiceNextNode.relation = twiceNext
-					twiceNextNode.Id = twiceNextId
-
-					// notify the twice next node who we are
-					twiceNextNode.sendMessage(connect, strconv.FormatUint(NodeId, 10), strconv.Itoa(twicePrev))
-					
-				}
-
+				// in case there was a leader in the network
 				if leaderId != 0 {
 					HandleNewLeader(leaderId)
 				}
 
-			case requestNextNode:
-				nextNode := Nodes.FindSingleByRelation(next)
-
-				if nextNode != nil {
-					//panic("invalid state")
-					n.sendMessage(nextNodeInfo, strconv.FormatUint(nextNode.Id, 10))
-				}
-
-			case nextNodeInfo:
-				nodeId, err := strconv.ParseUint(msg[parseStartIx], 10, 64)
+			case closering:
+				senderId, err := StringToId(msg[parseStartIx])
 				if err != nil {
-					DebugLog("nextNodeInfo nodeId err")
+					DebugLog("CLOSERING sender id failure")
 					return false
 				}
 
-				//if NetworkState == twoNodes {
-				/*twiceNextNode := Nodes.FindSingleByRelation(twiceNext)					
-				if twiceNextNode != nil {
-					twiceNextNode.disconnect()
-				}*/
-				if NetworkState == twoNodes {
-					twiceNextNode := Connect(IdToEndpoint(nodeId))
-					twiceNextNode.state = assimilated
-					twiceNextNode.relation = twiceNext
-					twiceNextNode.Id = nodeId
+				Log(fmt.Sprintf("Received closering: from_id=0x%X, sender_id=0x%X", n.Id, senderId))
+				prevNode := Nodes.FindSingleByRelation(prev)
 
-					twiceNextNode.sendMessage(connect, strconv.FormatUint(NodeId, 10), strconv.Itoa(twicePrev))
-					NetworkState = ring
+				if prevNode != nil {
+					// we have a prev node, forward closering
+					Log(fmt.Sprintf("Forwarding closering: target_id=0x%X, sender_id=0x%X", prevNode.Id, senderId))
+					prevNode.sendMessage(closering, msg[parseStartIx])
+				} else {
+					Log(fmt.Sprintf("Received closering without having a prevNode! from_id=0x%X, sender_id=0x%X", n.Id, senderId))
+					Log(fmt.Sprintf("Sending connect message: target_id=0x%X, my_id=0x%X, relation=%s", senderId, NodeId, next))
+					prevNode = Connect(IdToEndpoint(senderId))
+
+					if prevNode == nil {
+						Log(fmt.Sprintf("Connection to remote node failed!, id=0x%X", senderId))
+						return false
+					}
+
+					prevNode.relation = prev
+					prevNode.Id = senderId
+					prevNode.sendMessage(connect, IdToString(NodeId), next)
 				}
-				//}
 		}
 	}
 
@@ -298,50 +257,48 @@ func (n *Node) processMessage(m string) bool {
 
 func (n *Node) handleDisconnect() {
 	Nodes.Remove(n.Id)
+
+	// connection to next node lost
+	if n.relation == next {
+		prevNode := Nodes.FindSingleByRelation(prev)
+
+		// if there is no prev node or it was the same one as next
+		if prevNode == nil || prevNode.Id == n.Id {
+			// then we're left alone
+			NetworkState = singleNode
+			Log(fmt.Sprintf("Network state changed to singleNode"))
+		} else {
+			Log(fmt.Sprintf("Sending closering: target_id=0x%X, sender_id=0x%X", prevNode.Id, NodeId))
+			prevNode.sendMessage(closering, IdToString(NodeId))
+		}
+	}
+
 	UpdateStatus()
 }
 
 func (n *Node) handleConnect() {
-	if n.relation == next {
+	if n.relation == none {
+		n.relation = next
+
 		// new node is joining the network
 		if NetworkState == singleNode {
-			n.sendMessage(netinfo, strconv.FormatUint(NodeId, 10), strconv.FormatUint(NodeId, 10), strconv.Itoa(0), strconv.FormatUint(LeaderId, 10))
-			n.state = assimilated
-			NetworkState = twoNodes
+			n.sendMessage(netinfo, IdToString(NodeId), IdToString(NodeId), IdToString(LeaderId))
+			NetworkState = ring
+			Log("Network state changed to ring")
 		} else {
-			var oldTwiceNextId uint64
-
-			if NetworkState == ring {
-				oldTwiceNext := Nodes.FindSingleByRelation(twiceNext)
-				if oldTwiceNext == nil {
-					panic("invalid network state: ring without twiceNext node")
-				}				
-				oldTwiceNextId = oldTwiceNext.Id
-				oldTwiceNext.disconnect()
-			}
-
 			oldNext := Nodes.FindSingleByRelation(next)
 			if oldNext == nil {
-				panic("invalid network state: twoNodes or ring without next node")
+				panic("invalid network state: ring without next node")
 			}
+			Log(fmt.Sprintf("New next connection while in ring, closing oldNext; old_next_id=0x%X, new_next_id=0x%X", oldNext.Id, n.Id))
+			oldNext.relation = none
+			oldNext.disconnect()
 
-			oldNext.relation = twiceNext
-			oldNext.sendMessage(connect, strconv.FormatUint(NodeId, 10), strconv.Itoa(twicePrev), strconv.FormatUint(n.Id, 10))
-
-			n.sendMessage(netinfo, strconv.FormatUint(NodeId, 10), strconv.FormatUint(oldNext.Id, 10), strconv.FormatUint(oldTwiceNextId, 10), strconv.FormatUint(LeaderId, 10))
-			n.state = assimilated
-			NetworkState = ring
+			n.sendMessage(netinfo, IdToString(NodeId), IdToString(oldNext.Id), IdToString(LeaderId))
 		}
-	} else if n.relation == twicePrev {
-		n.state = assimilated
-		
-		if NetworkState == twoNodes {
-			n.sendMessage(requestNextNode)
-		}
-	} else if n.relation == prev {
-		n.state = assimilated
-	}	else {
-		panic("xxxxxx")
+	} else if n.relation == prev || n.relation == next {
+	} else {
+		panic("invalid connection request")
 	}
 }
 
@@ -357,7 +314,7 @@ func Connect(a string) *Node {
 		return nil
 	}
 
-	n := &Node{0, none, new, c}
+	n := &Node{0, none, c}
 	go n.handleClient()
 
 	return n
@@ -377,14 +334,16 @@ func Disconnect() {
 	UpdateStatus()
 }
 
-func startServer(p uint16, newNetwork bool) {
+func startServer(p uint16, newNetwork bool, resultChan chan bool) {
 	l, err := net.Listen("tcp4", fmt.Sprintf(":%d", p))
 
 	if err != nil {
 		UserError(err.Error())
+		resultChan <- false
 		return
 	}
 
+	resultChan <- true
 	server = l
 	Log(fmt.Sprintf("Server started, listening on port %d. nodeId=0x%X", p, NodeId))
 	
@@ -406,7 +365,7 @@ func startServer(p uint16, newNetwork bool) {
 			return
 		}
 
-		n := &Node{0, none, new, c}
+		n := &Node{0, none, c}
 		go n.handleClient()
 	}
 }
@@ -417,8 +376,14 @@ func StartNetwork(p uint16) {
 		return
 	}
 
+	serverStartResultChan := make(chan bool)
+
 	initNode(getIp(), p)
-	go startServer(p, true)
+	go startServer(p, true, serverStartResultChan)
+	
+	if !<- serverStartResultChan {
+		resetNode()
+	}
 }
 
 func JoinNetwork(a string, p uint16) {
@@ -427,18 +392,24 @@ func JoinNetwork(a string, p uint16) {
 		return
 	}
 
+	serverStartResultChan := make(chan bool)
+
 	initNode(getIp(), p)
-	go startServer(p, false)
+	go startServer(p, false, serverStartResultChan)
 
-	networkNode := Connect(a)
+	if <- serverStartResultChan {
+		networkNode := Connect(a)
 
-	if networkNode == nil {
-		Disconnect()
-		UserError("Failed to connect to the remote network")
-		return
+		if networkNode == nil {
+			Disconnect()
+			UserError("Failed to connect to the remote network")
+			return
+		}
+		networkNode.relation = prev
+
+		Log(fmt.Sprintf("Sending connect message: address=%s, my_id=0x%X, relation=%s", a, NodeId, none))
+		networkNode.sendMessage(connect, IdToString(NodeId), none)
+	} else {
+		resetNode()
 	}
-
-	networkNode.state = assimilated
-	networkNode.relation = prev
-	networkNode.sendMessage(connect, strconv.FormatUint(NodeId, 10), strconv.Itoa(next))
 }

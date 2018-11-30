@@ -124,38 +124,12 @@ func UpdateStatus() {
 
 	DebugLog("UpdateStatus")
 
-	var ns string
-
-	switch NetworkState {
-		case noNetwork: ns = "No Network"
-		case singleNode: ns = "Single Node"
-		case twoNodes: ns = "Two Nodes"
-		case ring: ns = "Ring"
-	}
-
 	var nodes string
 
 	if Nodes != nil {
 		cn := Nodes.head
 		for cn != nil {
-			var state string
-			var relation string
-
-			switch cn.data.relation {
-				case none: relation = "none"
-				case next: relation = "next"
-				case twiceNext: relation = "twiceNext"
-				case prev: relation = "prev"
-				case twicePrev: relation = "twicePrev"
-				case follower: relation = "follower"
-			}
-
-			switch cn.data.state {
-				case new: state = "new"
-				case assimilated: state = "assimilated"
-			}
-
-			nodes = fmt.Sprintf("%s\n   -> 0x%X (listening on %s): %s, %s", nodes, cn.data.Id, IdToEndpoint(cn.data.Id), state, relation)
+			nodes = fmt.Sprintf("%s\n   -> 0x%X (listening on %s): %s", nodes, cn.data.Id, IdToEndpoint(cn.data.Id), cn.data.relation)
 			cn = cn.next
 		}
 	}
@@ -166,7 +140,7 @@ func UpdateStatus() {
 		 "NodeId:   0x%X (%s)\n"+
 		 "LeaderId: 0x%X (%s)\n"+
 		 "\n"+
-		 "Connected nodes:\n%s\n\nEND", readTime(), ns, NodeId, IdToEndpoint(NodeId), LeaderId, IdToEndpoint(LeaderId), nodes))
+		 "Connected nodes:\n%s\n\nEND", readTime(), NetworkState, NodeId, IdToEndpoint(NodeId), LeaderId, IdToEndpoint(LeaderId), nodes))
 }
 
 func AppendLog(s string) {
@@ -201,6 +175,7 @@ func layout(g *gocui.Gui) error {
 
 		logView.Wrap = true
 		logView.Title = logViewTitle
+		logView.Autoscroll = true
 
 		statusView, err := g.SetView(statusViewName, logViewWidth + 1, curY, maxW, logViewHeight)
 		

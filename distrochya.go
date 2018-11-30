@@ -12,7 +12,7 @@ type command struct {
 }
 
 var DebugEnabled bool = true
-var DebugLogEnabled bool = true
+var DebugLogEnabled bool = false
 var commands map[string]*command
 
 
@@ -40,7 +40,7 @@ func DebugLog(m string) {
 }
 
 func Log(m string) {
-	AppendLog(m)
+	AppendLog(fmt.Sprintf("(%8d)  %s", advanceTime(), m))
 }
 
 func UserError(e string) {
@@ -115,6 +115,11 @@ func initCommands() {
 	}}
 	commands["/d"] = &command{"/connect localhost:9999 9996", "", func (args[] string) {
 		ProcessCommand("/connect", []string{"localhost:9999", "9996"})
+	}}
+
+	commands["/m"] = &command{"mark", "", func (args[] string) {
+		AppendChat("========= MARK ==========")
+		AppendLog("========= MARK ==========")
 	}}
 }
 
