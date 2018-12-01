@@ -36,46 +36,29 @@ func (l *NodeSyncLinkedList) Add(n *Node) {
 	}
 }
 
-func (l *NodeSyncLinkedList) Remove(id uint64) {
+func (l *NodeSyncLinkedList) Remove(n *Node) {
+	l.lock.Lock()
+	defer l.lock.Unlock()
+
 	if l.head == nil {
 		return
 	}
 
-	l.lock.Lock()
-	defer l.lock.Unlock()
-
 	cn := l.head
 
-	if cn.data.Id == id {
+	if cn.data == n {
 		l.head = cn.next
 	} else {
 		for cn.next != nil {
 			pn := cn
 			cn = cn.next
 
-			if cn.data.Id == id {
+			if cn.data == n {
 				pn.next = cn.next
 				break
 			}
 		}
 	}
-}
-
-func (l *NodeSyncLinkedList) Find(id uint64) *Node {
-	l.lock.Lock()
-	defer l.lock.Unlock()
-
-	cn := l.head
-
-	for cn != nil {
-		if cn.data.Id == id {
-			return cn.data
-		}
-
-		cn = cn.next
-	}
-
-	return nil
 }
 
 func (l *NodeSyncLinkedList) FindSingleByRelation(r string) *Node {
@@ -86,6 +69,23 @@ func (l *NodeSyncLinkedList) FindSingleByRelation(r string) *Node {
 
 	for cn != nil {
 		if cn.data.relation == r {
+			return cn.data
+		}
+
+		cn = cn.next
+	}
+
+	return nil
+}
+
+func (l *NodeSyncLinkedList) FindSingleByRelationExcludingId(r string, id uint64) *Node {
+	l.lock.Lock()
+	defer l.lock.Unlock()
+
+	cn := l.head
+
+	for cn != nil {
+		if cn.data.relation == r && cn.data.Id != id {
 			return cn.data
 		}
 

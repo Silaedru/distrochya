@@ -8,8 +8,10 @@ import (
 	"strings"
 	"strconv"
 	"time"
+	"sync"
 	"sync/atomic"
 	"encoding/binary"
+	"math/rand"
 )
 
 type Node struct {
@@ -44,16 +46,34 @@ const (
 )
 
 var server net.Listener
+
+var NetworkStateMutex *sync.Mutex = &sync.Mutex{}
 var NetworkState string
 var NodeId uint64
 var LeaderId uint64
+var NodesMutex *sync.Mutex = &sync.Mutex{}
 var Nodes *NodeSyncLinkedList
 
 var ringBroken uint32 = 0
 
+func updateNetworkState(s string) {
+	NetworkStateMutex.Lock()
+	defer NetworkStateMutex.Unlock()
+	Log("Network state changed to " + s)
+	NetworkState = s
+}
+
+func readNetworkState() string {
+	NetworkStateMutex.Lock()
+	defer NetworkStateMutex.Unlock()
+	return NetworkState
+}
+
 func resetNode() {
+	NodesMutex.Lock()
+	defer NodesMutex.Unlock()
 	server = nil
-	NetworkState = noNetwork
+	updateNetworkState(noNetwork)
 	NodeId = 0
 	LeaderId = 0
 
@@ -66,8 +86,11 @@ func resetNode() {
 }
 
 func initNode(ip uint32, p uint16) {
+	NodesMutex.Lock()
+	defer NodesMutex.Unlock()
 	resetTime()
-	CreateNodeId(ip, p, 0)
+	rand.Seed(time.Now().UnixNano())
+	CreateNodeId(ip, p, uint16(rand.Uint32()))
 	Nodes = NewNodeSyncLinkedList()
 }
 
@@ -112,13 +135,13 @@ func (n *Node) handleClient() {
 
 	r := bufio.NewReader(n.connection)
 
-	for {
+	for n.connected {
 		UpdateStatus()
 		data, err := r.ReadString('\n')
 
 		if err != nil {
-			Log(fmt.Sprintf("Client 0x%X disconnected", n.Id))
-			DebugLog(fmt.Sprintf("0x%X: %s", n.Id, err.Error()))
+			Log(fmt.Sprintf("Client 0x%X disconnected, relation=%s", n.Id, n.relation))
+			DebugLog(fmt.Sprintf("READ ERR: 0x%X: %s", n.Id, err.Error()))
 
 			n.handleDisconnect()
 			return
@@ -131,11 +154,14 @@ func (n *Node) handleClient() {
 			Log("IMSG: " + data)
 		}
 
-		DebugLog("RECV: ==" + data + "==")
+		DebugLog("RECV: ==" + data + "== (" + IdToString(n.Id) + ")")
 	}
+
+	n.handleDisconnect()
 }
 
 func (n *Node) disconnect() {
+	n.connection.SetDeadline(time.Now())
 	n.connection.Close()
 }
 
@@ -146,8 +172,13 @@ func (n *Node) sendMessage(m ...string) {
 		msg += ";" + s
 	}
 
-	DebugLog("SEND: ==" + msg + "==")
-	n.connection.Write([]byte(msg + "\n"))
+	DebugLog("SEND: ==" + msg + "== (" + IdToString(n.Id) + ")")
+	_, err := n.connection.Write([]byte(msg + "\n"))
+
+	if err != nil {
+		DebugLog(fmt.Sprintf("WRITE ERR: 0x%X: %s", n.Id, err.Error()))
+		n.disconnect()
+	}
 }
 
 // returns false on failure
@@ -206,25 +237,26 @@ func (n *Node) processMessage(m string) bool {
 
 				n.Id = nodeId
 				Log(fmt.Sprintf("[%d] Received netinfo: remote_id=0x%X, next_id=0x%X, leader_id=0x%X", time, nodeId, nextId, leaderId))
-				
+
 				Log(fmt.Sprintf("Attempting to connect to remote node, id=0x%X", nodeId))
 				nextNode := Connect(IdToEndpoint(nextId))
 				if nextNode == nil {
 					Log(fmt.Sprintf("Connection to remote node failed!, id=0x%X", nodeId))
-					return false
+					Log("Will now attempt to close the ring")
+					closeRing(nextId)
+					//return false
+				} else {
+					nextNode.relation = next
+					nextNode.Id = nextId
+					Log(fmt.Sprintf("Connection to remote node was successful, id=0x%X", nextId))
+
+					// notify the next node who we are
+					Log(fmt.Sprintf("Sending connect message: target_id=0x%X, my_id=0x%X, relation=%s", nextNode.Id, NodeId, prev))
+					nextNode.sendMessage(connect, strconv.FormatUint(NodeId, 16), prev)
+					
+					// if we have connected to somebody we have a ring
+					updateNetworkState(ring)
 				}
-				nextNode.relation = next
-				nextNode.Id = nextId
-				Log(fmt.Sprintf("Connection to remote node was successful, id=0x%X", nextId))
-
-				// notify the next node who we are
-				Log(fmt.Sprintf("Sending connect message: target_id=0x%X, my_id=0x%X, relation=%s", nextNode.Id, NodeId, prev))
-				nextNode.sendMessage(connect, strconv.FormatUint(NodeId, 16), prev)
-				
-				// if we have connected to somebody we have a ring
-				NetworkState = ring
-				Log("Network state changed to ring")
-
 				// in case there was a leader in the network
 				if leaderId != 0 {
 					HandleNewLeader(leaderId)
@@ -268,31 +300,37 @@ func (n *Node) processMessage(m string) bool {
 	return true
 }
 
+func closeRing(oldNextNodeId uint64) {
+	if atomic.LoadUint32(&ringBroken) == 1 {
+		return
+	}
+
+	prevNode := Nodes.FindSingleByRelation(prev)
+	// if there is no prev node or it was the same one as next
+	if prevNode == nil || prevNode.Id == oldNextNodeId {
+		// then we're left alone
+		updateNetworkState(singleNode)
+	} else {
+		atomic.StoreUint32(&ringBroken, 1)
+
+		go func() {
+			for atomic.LoadUint32(&ringBroken) == 1 && prevNode.connected {
+				Log("Broken ring detected")
+				Log(fmt.Sprintf("Sending closering: target_id=0x%X, sender_id=0x%X", prevNode.Id, NodeId))
+				prevNode.sendMessage(closering, IdToString(NodeId))
+				time.Sleep(ringRepairTimeoutSeconds * time.Second)
+			}
+		}()
+	}
+}
+
 func (n *Node) handleDisconnect() {
 	n.connected = false
-	Nodes.Remove(n.Id)
+	Nodes.Remove(n)
 
 	// connection to next node lost
 	if n.relation == next {
-		prevNode := Nodes.FindSingleByRelation(prev)
-
-		// if there is no prev node or it was the same one as next
-		if prevNode == nil || prevNode.Id == n.Id {
-			// then we're left alone
-			NetworkState = singleNode
-			Log(fmt.Sprintf("Network state changed to singleNode"))
-		} else {
-			atomic.StoreUint32(&ringBroken, 1)
-
-			go func() {
-				for atomic.LoadUint32(&ringBroken) == 1 && prevNode.connected {
-					Log("Broken ring detected")
-					Log(fmt.Sprintf("Sending closering: target_id=0x%X, sender_id=0x%X", prevNode.Id, NodeId))
-					prevNode.sendMessage(closering, IdToString(NodeId))
-					time.Sleep(ringRepairTimeoutSeconds * time.Second)
-				}
-			}()
-		}
+		closeRing(n.Id)
 	}
 
 	UpdateStatus()
@@ -303,12 +341,11 @@ func (n *Node) handleConnect() {
 		n.relation = next
 
 		// new node is joining the network
-		if NetworkState == singleNode {
+		if readNetworkState() == singleNode {
 			n.sendMessage(netinfo, IdToString(NodeId), IdToString(NodeId), IdToString(LeaderId))
-			NetworkState = ring
-			Log("Network state changed to ring")
+			updateNetworkState(ring)
 		} else {
-			oldNext := Nodes.FindSingleByRelation(next)
+			oldNext := Nodes.FindSingleByRelationExcludingId(next, n.Id)
 			if oldNext == nil {
 				panic("invalid network state: ring without next node")
 			}
@@ -318,7 +355,7 @@ func (n *Node) handleConnect() {
 
 			n.sendMessage(netinfo, IdToString(NodeId), IdToString(oldNext.Id), IdToString(LeaderId))
 		}
-	} else if n.relation == prev{
+	} else if n.relation == prev {
 	} else if n.relation == next {
 		atomic.StoreUint32(&ringBroken, 0)
 	} else {
@@ -372,7 +409,7 @@ func startServer(p uint16, newNetwork bool, resultChan chan bool) {
 	Log(fmt.Sprintf("Server started, listening on port %d. nodeId=0x%X", p, NodeId))
 	
 	if newNetwork {
-		NetworkState = singleNode
+		updateNetworkState(singleNode)
 		UserEvent(fmt.Sprintf("network created, listening on port %d", p))
 		Log("NEW NETWORK -> ASSUMING LEADER ROLE")
 		HandleNewLeader(NodeId)

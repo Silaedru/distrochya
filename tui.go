@@ -125,13 +125,14 @@ func UpdateStatus() {
 	DebugLog("UpdateStatus")
 
 	var nodes string
-
 	if Nodes != nil {
+		Nodes.lock.Lock()
 		cn := Nodes.head
 		for cn != nil {
 			nodes = fmt.Sprintf("%s\n   -> 0x%X (listening on %s): %s", nodes, cn.data.Id, IdToEndpoint(cn.data.Id), cn.data.relation)
 			cn = cn.next
 		}
+		Nodes.lock.Unlock()
 	}
 
 	overwriteView(statusViewName, fmt.Sprintf("" +
@@ -140,7 +141,7 @@ func UpdateStatus() {
 		 "NodeId:   0x%X (%s)\n"+
 		 "LeaderId: 0x%X (%s)\n"+
 		 "\n"+
-		 "Connected nodes:\n%s\n\nEND", readTime(), NetworkState, NodeId, IdToEndpoint(NodeId), LeaderId, IdToEndpoint(LeaderId), nodes))
+		 "Connected nodes:\n%s\n\nEND", readTime(), readNetworkState(), NodeId, IdToEndpoint(NodeId), LeaderId, IdToEndpoint(LeaderId), nodes))
 }
 
 func AppendLog(s string) {
