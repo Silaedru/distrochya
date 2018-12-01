@@ -7,6 +7,8 @@ import (
 	"bytes"
 	"strings"
 	"strconv"
+	"time"
+	"sync/atomic"
 	"encoding/binary"
 )
 
@@ -14,6 +16,7 @@ type Node struct {
 	Id uint64
 	relation string
 	connection net.Conn
+	connected bool
 }
 
 const (
@@ -35,6 +38,9 @@ const (
 	noNetwork = "noNetwork"
 	singleNode = "singleNode"
 	ring = "ring"
+
+	// other
+	ringRepairTimeoutSeconds = 3
 )
 
 var server net.Listener
@@ -42,6 +48,8 @@ var NetworkState string
 var NodeId uint64
 var LeaderId uint64
 var Nodes *NodeSyncLinkedList
+
+var ringBroken uint32 = 0
 
 func resetNode() {
 	server = nil
@@ -98,6 +106,7 @@ func StringToId(s string) (uint64, error) {
 }
 
 func (n *Node) handleClient() {
+	n.connected = true
 	Nodes.Add(n)
 	Log("New connection!")
 
@@ -232,9 +241,13 @@ func (n *Node) processMessage(m string) bool {
 				prevNode := Nodes.FindSingleByRelation(prev)
 
 				if prevNode != nil {
-					// we have a prev node, forward closering
-					Log(fmt.Sprintf("Forwarding closering: target_id=0x%X, sender_id=0x%X", prevNode.Id, senderId))
-					prevNode.sendMessage(closering, msg[parseStartIx])
+					if senderId != NodeId {
+						Log(fmt.Sprintf("Forwarding closering: target_id=0x%X, sender_id=0x%X", prevNode.Id, senderId))
+						prevNode.sendMessage(closering, msg[parseStartIx])
+					} else {
+						atomic.StoreUint32(&ringBroken, 0)
+						Log(fmt.Sprintf("Closering propagation stopped: target_id=0x%X == sender_id=0x%X", prevNode.Id, senderId))
+					}
 				} else {
 					Log(fmt.Sprintf("Received closering without having a prevNode! from_id=0x%X, sender_id=0x%X", n.Id, senderId))
 					Log(fmt.Sprintf("Sending connect message: target_id=0x%X, my_id=0x%X, relation=%s", senderId, NodeId, next))
@@ -256,6 +269,7 @@ func (n *Node) processMessage(m string) bool {
 }
 
 func (n *Node) handleDisconnect() {
+	n.connected = false
 	Nodes.Remove(n.Id)
 
 	// connection to next node lost
@@ -268,8 +282,16 @@ func (n *Node) handleDisconnect() {
 			NetworkState = singleNode
 			Log(fmt.Sprintf("Network state changed to singleNode"))
 		} else {
-			Log(fmt.Sprintf("Sending closering: target_id=0x%X, sender_id=0x%X", prevNode.Id, NodeId))
-			prevNode.sendMessage(closering, IdToString(NodeId))
+			atomic.StoreUint32(&ringBroken, 1)
+
+			go func() {
+				for atomic.LoadUint32(&ringBroken) == 1 && prevNode.connected {
+					Log("Broken ring detected")
+					Log(fmt.Sprintf("Sending closering: target_id=0x%X, sender_id=0x%X", prevNode.Id, NodeId))
+					prevNode.sendMessage(closering, IdToString(NodeId))
+					time.Sleep(ringRepairTimeoutSeconds * time.Second)
+				}
+			}()
 		}
 	}
 
@@ -296,7 +318,9 @@ func (n *Node) handleConnect() {
 
 			n.sendMessage(netinfo, IdToString(NodeId), IdToString(oldNext.Id), IdToString(LeaderId))
 		}
-	} else if n.relation == prev || n.relation == next {
+	} else if n.relation == prev{
+	} else if n.relation == next {
+		atomic.StoreUint32(&ringBroken, 0)
 	} else {
 		panic("invalid connection request")
 	}
@@ -314,7 +338,7 @@ func Connect(a string) *Node {
 		return nil
 	}
 
-	n := &Node{0, none, c}
+	n := &Node{0, none, c, false}
 	go n.handleClient()
 
 	return n
@@ -365,7 +389,7 @@ func startServer(p uint16, newNetwork bool, resultChan chan bool) {
 			return
 		}
 
-		n := &Node{0, none, c}
+		n := &Node{0, none, c, false}
 		go n.handleClient()
 	}
 }
