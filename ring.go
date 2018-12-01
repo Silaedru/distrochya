@@ -43,6 +43,7 @@ const (
 
 	// other
 	ringRepairTimeoutSeconds = 3
+	sendMessageTimeoutSeconds = 3
 )
 
 var server net.Listener
@@ -173,12 +174,15 @@ func (n *Node) sendMessage(m ...string) {
 	}
 
 	DebugLog("SEND: ==" + msg + "== (" + IdToString(n.Id) + ")")
+	n.connection.SetWriteDeadline(time.Now().Add(sendMessageTimeoutSeconds * time.Second))
 	_, err := n.connection.Write([]byte(msg + "\n"))
 
 	if err != nil {
 		DebugLog(fmt.Sprintf("WRITE ERR: 0x%X: %s", n.Id, err.Error()))
 		n.disconnect()
 	}
+	var zeroTime time.Time
+	n.connection.SetWriteDeadline(zeroTime)
 }
 
 // returns false on failure
