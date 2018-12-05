@@ -140,7 +140,7 @@ func updateStatus() {
 		nodes.lock.Lock()
 		cn := nodes.head
 		for cn != nil {
-			nodesStr = fmt.Sprintf("%s\n   -> 0x%X (listening on %s): %s", nodesStr, cn.data.id, idToEndpoint(cn.data.id), cn.data.relation)
+			nodesStr = fmt.Sprintf("%s\n   -> 0x%X (listening on %s): %s", nodesStr, cn.data.id, idToEndpoint(cn.data.id), cn.data.r)
 			cn = cn.next
 		}
 		nodes.lock.Unlock()
@@ -266,7 +266,7 @@ func setupKeyBindings(g *gocui.Gui) {
 	})
 }
 
-func InitializeTui() {
+func initializeTui() {
 	var err error
 	gui, err = gocui.NewGui(gocui.OutputNormal)
 

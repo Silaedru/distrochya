@@ -12,7 +12,7 @@ import (
 
 type Node struct {
 	id         uint64
-	relation   string
+	r          relation
 	connection net.Conn
 	connected  bool
 }
@@ -46,7 +46,7 @@ func (n *Node) handleDisconnect() {
 	nodes.remove(n)
 
 	// connection to next node lost
-	if n.relation == next {
+	if n.r == next {
 		closeRing(n.id)
 	}
 
@@ -54,8 +54,8 @@ func (n *Node) handleDisconnect() {
 }
 
 func (n *Node) handleConnect() {
-	if n.relation == none {
-		n.relation = next
+	if n.r == none {
+		n.r = next
 
 		// new node is joining the network
 		if readNetworkState() == singleNode {
@@ -67,13 +67,13 @@ func (n *Node) handleConnect() {
 				panic("invalid network state: ring without next node")
 			}
 			log(fmt.Sprintf("New next connection while in ring, closing oldNext; old_next_id=0x%X, new_next_id=0x%X", oldNext.id, n.id))
-			oldNext.relation = none
+			oldNext.r = none
 			oldNext.disconnect()
 
 			n.sendMessage(netinfo, idToString(nodeId), idToString(oldNext.id), idToString(leaderId))
 		}
-	} else if n.relation == prev {
-	} else if n.relation == next {
+	} else if n.r == prev {
+	} else if n.r == next {
 		atomic.StoreUint32(&ringBroken, 0)
 	} else {
 		panic("invalid connection request")
@@ -92,7 +92,7 @@ func (n *Node) handleClient() {
 		data, err := r.ReadString('\n')
 
 		if err != nil {
-			log(fmt.Sprintf("Client 0x%X disconnected, relation=%s", n.id, n.relation))
+			log(fmt.Sprintf("Client 0x%X disconnected, r=%s", n.id, n.r))
 			debugLog(fmt.Sprintf("READ ERR: 0x%X: %s", n.id, err.Error()))
 
 			n.handleDisconnect()
@@ -140,9 +140,9 @@ func (n *Node) processMessage(m string) bool {
 			}
 
 			n.id = id
-			n.relation = msg[parseStartIx+1]
+			n.r = relation(msg[parseStartIx+1])
 
-			log(fmt.Sprintf("[%d] Received connect message: remote_id=0x%X, relation=%s", messageTime, n.id, n.relation))
+			log(fmt.Sprintf("[%d] Received connect message: remote_id=0x%X, r=%s", messageTime, n.id, n.r))
 			n.handleConnect()
 
 		// response to initial connect request containing basic network info
@@ -177,13 +177,13 @@ func (n *Node) processMessage(m string) bool {
 				closeRing(nextId)
 				//return false
 			} else {
-				nextNode.relation = next
+				nextNode.r = next
 				nextNode.id = nextId
 				log(fmt.Sprintf("Connection to remote node was successful, id=0x%X", nextId))
 
 				// notify the next node who we are
-				log(fmt.Sprintf("Sending connect message: target_id=0x%X, my_id=0x%X, relation=%s", nextNode.id, nodeId, prev))
-				nextNode.sendMessage(connect, strconv.FormatUint(nodeId, 16), prev)
+				log(fmt.Sprintf("Sending connect message: target_id=0x%X, my_id=0x%X, r=%s", nextNode.id, nodeId, prev))
+				nextNode.sendMessage(connect, strconv.FormatUint(nodeId, 16), string(prev))
 
 				// if we have connected to somebody we have a ring
 				updateNetworkState(ring)
@@ -213,7 +213,7 @@ func (n *Node) processMessage(m string) bool {
 				}
 			} else {
 				log(fmt.Sprintf("Received closering without having a prevNode! from_id=0x%X, sender_id=0x%X", n.id, senderId))
-				log(fmt.Sprintf("Sending connect message: target_id=0x%X, my_id=0x%X, relation=%s", senderId, nodeId, next))
+				log(fmt.Sprintf("Sending connect message: target_id=0x%X, my_id=0x%X, r=%s", senderId, nodeId, next))
 				prevNode = connectToClient(idToEndpoint(senderId))
 
 				if prevNode == nil {
@@ -221,9 +221,9 @@ func (n *Node) processMessage(m string) bool {
 					return false
 				}
 
-				prevNode.relation = prev
+				prevNode.r = prev
 				prevNode.id = senderId
-				prevNode.sendMessage(connect, idToString(nodeId), next)
+				prevNode.sendMessage(connect, idToString(nodeId), string(next))
 			}
 		}
 	}

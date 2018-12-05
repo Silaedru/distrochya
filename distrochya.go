@@ -120,5 +120,5 @@ func initCommands() {
 
 func main() {
 	initCommands()
-	InitializeTui()
+	initializeTui()
 }

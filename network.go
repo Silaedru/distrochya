@@ -12,13 +12,15 @@ import (
 	"time"
 )
 
+type relation string
+
 const (
 	// node relations
-	none     = "none"
-	next     = "next"
-	prev     = "prev"
-	leader   = "leader"
-	follower = "follower"
+	none     = relation("none")
+	next     = relation("next")
+	prev     = relation("prev")
+	leader   = relation("leader")
+	follower = relation("follower")
 
 	// messages
 	// magic;message;params\n
@@ -232,10 +234,10 @@ func joinNetwork(a string, p uint16) {
 			userError("Failed to connect to the remote network")
 			return
 		}
-		networkNode.relation = prev
+		networkNode.r = prev
 
-		log(fmt.Sprintf("Sending connect message: address=%s, my_id=0x%X, relation=%s", a, nodeId, none))
-		networkNode.sendMessage(connect, idToString(nodeId), none)
+		log(fmt.Sprintf("Sending connect message: address=%s, my_id=0x%X, r=%s", a, nodeId, none))
+		networkNode.sendMessage(connect, idToString(nodeId), string(none))
 	} else {
 		resetNode()
 	}

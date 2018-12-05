@@ -60,14 +60,14 @@ func (l *nodeSyncLinkedList) remove(n *Node) {
 	}
 }
 
-func (l *nodeSyncLinkedList) findSingleByRelation(r string) *Node {
+func (l *nodeSyncLinkedList) findSingleByRelation(r relation) *Node {
 	l.lock.Lock()
 	defer l.lock.Unlock()
 
 	cn := l.head
 
 	for cn != nil {
-		if cn.data.relation == r {
+		if cn.data.r == r {
 			return cn.data
 		}
 
@@ -77,14 +77,14 @@ func (l *nodeSyncLinkedList) findSingleByRelation(r string) *Node {
 	return nil
 }
 
-func (l *nodeSyncLinkedList) findSingleByRelationExcludingId(r string, id uint64) *Node {
+func (l *nodeSyncLinkedList) findSingleByRelationExcludingId(r relation, id uint64) *Node {
 	l.lock.Lock()
 	defer l.lock.Unlock()
 
 	cn := l.head
 
 	for cn != nil {
-		if cn.data.relation == r && cn.data.id != id {
+		if cn.data.r == r && cn.data.id != id {
 			return cn.data
 		}
 
