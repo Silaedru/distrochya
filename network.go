@@ -39,13 +39,15 @@ const (
 	sendMessageTimeoutSeconds = 3
 )
 
-var server net.Listener
+var networkGlobalsMutex *sync.Mutex = &sync.Mutex{}
 var networkStateMutex *sync.Mutex = &sync.Mutex{}
+
+var server net.Listener
 var networkState string
 var nodeId uint64
-var serverGlobalsMutex *sync.Mutex = &sync.Mutex{}
 var nodes *nodeSyncLinkedList
-var ringBroken uint32 = 0
+
+var ringBroken uint32 = 0 // atomic, not guarded by mutex
 
 func updateNetworkState(s string) {
 	networkStateMutex.Lock()
@@ -56,34 +58,38 @@ func updateNetworkState(s string) {
 
 func readNetworkState() string {
 	networkStateMutex.Lock()
-	defer networkStateMutex.Unlock()
-	return networkState
+
+	rtn := networkState
+
+	networkStateMutex.Unlock()
+	return rtn
 }
 
 func resetNode() {
-	serverGlobalsMutex.Lock()
-	defer serverGlobalsMutex.Unlock()
+	networkGlobalsMutex.Lock()
+	defer networkGlobalsMutex.Unlock()
 
 	server = nil
 	nodeId = 0
 	updateNetworkState(noNetwork)
 	updateLeaderId(0)
 
-	for nodes.head != nil {
-		cn := nodes.head
-		cn.data.disconnect()
+	connectedNodes := nodes.toSlice()
+	
+	for _, node := range(connectedNodes) {
+		node.disconnect()
 	}
 
 	nodes = nil
 }
 
 func initNode(ip uint32, p uint16) {
-	serverGlobalsMutex.Lock()
-	defer serverGlobalsMutex.Unlock()
+	networkGlobalsMutex.Lock()
+	defer networkGlobalsMutex.Unlock()
 
 	resetTime()
 	rand.Seed(time.Now().UnixNano())
-	createNodeId(ip, p, uint16(rand.Uint32()))
+	nodeId = createNodeId(ip, p, uint16(rand.Uint32()))
 	nodes = newNodeSyncLinkedList()
 }
 
@@ -126,34 +132,52 @@ func closeRing(oldNextNodeId uint64) {
 		return
 	}
 
-	prevNode := nodes.findSingleByRelation(prev)
-	// if there is no prev node or it was the same one as next
-	if prevNode == nil || prevNode.id == oldNextNodeId {
-		// then we're left alone
+	networkGlobalsMutex.Lock()
+	var prevNode *Node
+	if nodes != nil {
+		prevNode = nodes.findSingleByRelation(prev)
+	}
+	networkGlobalsMutex.Unlock()
+
+	if prevNode == nil {
 		updateNetworkState(singleNode)
 	} else {
-		atomic.StoreUint32(&ringBroken, 1)
+		prevNode.lock.Lock()
 
-		go func() {
-			for atomic.LoadUint32(&ringBroken) == 1 && prevNode.connected {
-				log("Broken ring detected")
-				log(fmt.Sprintf("Sending closering: target_id=0x%X, sender_id=0x%X", prevNode.id, nodeId))
-				prevNode.sendMessage(closering, idToString(nodeId))
-				time.Sleep(ringRepairTimeoutSeconds * time.Second)
-			}
-		}()
+		if prevNode.id == oldNextNodeId {
+			prevNode.lock.Unlock()
+			updateNetworkState(singleNode)
+		} else {
+			atomic.StoreUint32(&ringBroken, 1)
+
+			go func() {
+				for atomic.LoadUint32(&ringBroken) == 1 && prevNode.connected {
+					prevNode.lock.Unlock()
+					log("Broken ring detected")
+					log(fmt.Sprintf("Sending closering: target_id=0x%X, sender_id=0x%X", prevNode.id, nodeId))
+					prevNode.sendMessage(closering, idToString(nodeId))
+					time.Sleep(ringRepairTimeoutSeconds * time.Second)
+					prevNode.lock.Lock()
+				}
+
+				prevNode.lock.Unlock()
+			}()
+		}
 	}
 }
 
-func createNodeId(i uint32, p uint16, f uint16) {
-	nodeId = uint64(i)<<32 | uint64(p)<<16 | uint64(f)
+func createNodeId(i uint32, p uint16, f uint16) uint64 {
+	return uint64(i)<<32 | uint64(p)<<16 | uint64(f)
 }
 
 func disconnect() {
+	networkGlobalsMutex.Lock()
 	if server == nil {
 		userError("not connected to any network")
+		networkGlobalsMutex.Unlock()
 		return
 	}
+	networkGlobalsMutex.Unlock()
 
 	server.Close()
 	resetNode()
@@ -174,20 +198,18 @@ func startServer(p uint16, newNetwork bool, resultChan chan bool) {
 
 	resultChan <- true
 
-	serverGlobalsMutex.Lock()
+	networkGlobalsMutex.Lock()
 	server = l
-	serverGlobalsMutex.Unlock()
+	networkGlobalsMutex.Unlock()
 
 	log(fmt.Sprintf("Server started, listening on port %d. nodeId=0x%X", p, nodeId))
+	userEvent(fmt.Sprintf("listening on port %d", p))
 
 	if newNetwork {
 		updateNetworkState(singleNode)
-		userEvent(fmt.Sprintf("network created, listening on port %d", p))
 		log("NEW NETWORK -> ASSUMING LEADER ROLE")
 		handleNewLeader(nodeId)
 	}
-
-	updateStatus()
 
 	// incoming connections
 	for server != nil {
@@ -198,7 +220,7 @@ func startServer(p uint16, newNetwork bool, resultChan chan bool) {
 			return
 		}
 
-		n := &Node{0, none, c, false}
+		n := nodeFromConnection(c)
 		go n.handleClient()
 	}
 }
@@ -217,6 +239,8 @@ func startNetwork(p uint16) {
 	if !<-serverStartResultChan {
 		resetNode()
 	}
+
+	updateStatus()
 }
 
 func joinNetwork(a string, p uint16) {

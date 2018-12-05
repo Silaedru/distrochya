@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"github.com/jroimartin/gocui"
 	"strings"
+	"time"
 )
 
 const (
@@ -133,26 +134,38 @@ func updateStatus() {
 		return
 	}
 
-	debugLog("updateStatus")
+	go func() {
+		debugLog("updateStatus")
 
-	var nodesStr string
-	if nodes != nil {
-		nodes.lock.Lock()
-		cn := nodes.head
-		for cn != nil {
-			nodesStr = fmt.Sprintf("%s\n   -> 0x%X (listening on %s): %s", nodesStr, cn.data.id, idToEndpoint(cn.data.id), cn.data.r)
-			cn = cn.next
+		time.Sleep(100 * time.Millisecond)
+
+		networkGlobalsMutex.Lock()
+		var nodesStr string
+		if nodes != nil {
+			nodes.lock.Lock()
+			cn := nodes.head
+			for cn != nil {
+				cn.data.lock.Lock()
+				nID := cn.data.id
+				nodesStr = fmt.Sprintf("%s\n   -> 0x%X (listening on %s): %s", nodesStr, nID, idToEndpoint(nID), cn.data.r)
+				cn.data.lock.Unlock()
+				cn = cn.next
+			}
+			nodes.lock.Unlock()
 		}
-		nodes.lock.Unlock()
-	}
 
-	overwriteView(statusViewName, fmt.Sprintf(""+
-		"Logical time: %d\n"+
-		"Network state: %s\n"+
-		"nodeId:   0x%X (%s)\n"+
-		"leaderId: 0x%X (%s)\n"+
-		"\n"+
-		"Connected nodes:\n%s\n\nEND", readTime(), readNetworkState(), nodeId, idToEndpoint(nodeId), readLeaderId(), idToEndpoint(readLeaderId()), nodesStr))
+		overwriteView(statusViewName, fmt.Sprintf(""+
+			"Logical time: %d\n"+
+			"Network state: %s\n"+
+			"nodeId:   0x%X (%s)\n"+
+			"leaderId: 0x%X (%s)\n"+
+			"\n"+
+			"Connected nodes:\n%s\n\n   === END ===", readTime(),
+			 readNetworkState(), nodeId, idToEndpoint(nodeId), readLeaderId(),
+			  idToEndpoint(readLeaderId()), nodesStr))
+
+		networkGlobalsMutex.Unlock()
+	}()
 }
 
 func appendLogView(s string) {

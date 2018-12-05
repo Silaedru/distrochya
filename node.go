@@ -6,6 +6,7 @@ import (
 	"net"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 )
@@ -15,6 +16,7 @@ type Node struct {
 	r          relation
 	connection net.Conn
 	connected  bool
+	lock	   *sync.Mutex
 }
 
 func (n *Node) disconnect() {
@@ -42,8 +44,15 @@ func (n *Node) sendMessage(m ...string) {
 }
 
 func (n *Node) handleDisconnect() {
+	n.lock.Lock()
 	n.connected = false
-	nodes.remove(n)
+	n.lock.Unlock()
+
+	networkGlobalsMutex.Lock()
+	if nodes != nil {
+		nodes.remove(n)
+	}
+	networkGlobalsMutex.Unlock()
 
 	// connection to next node lost
 	if n.r == next {
@@ -55,7 +64,9 @@ func (n *Node) handleDisconnect() {
 
 func (n *Node) handleConnect() {
 	if n.r == none {
+		n.lock.Lock()
 		n.r = next
+		n.lock.Unlock()
 
 		// new node is joining the network
 		if readNetworkState() == singleNode {
@@ -63,12 +74,16 @@ func (n *Node) handleConnect() {
 			n.sendMessage(netinfo, idToString(nodeId), idToString(nodeId), idToString(readLeaderId()))
 			updateNetworkState(ring)
 		} else {
+			networkGlobalsMutex.Lock()
 			oldNext := nodes.findSingleByRelationExcludingId(next, n.id)
+			networkGlobalsMutex.Unlock()
 			if oldNext == nil {
 				panic("invalid network state: ring without next node")
 			}
 			log(fmt.Sprintf("New next connection while in ring, closing oldNext; old_next_id=0x%X, new_next_id=0x%X", oldNext.id, n.id))
+			oldNext.lock.Lock()
 			oldNext.r = none
+			oldNext.lock.Unlock()
 			oldNext.disconnect()
 
 			log(fmt.Sprintf("New connection with r=none, sending netinfo my_id=0x%X, next_id=0x%X, leader_id=0x%X", nodeId, oldNext.id, readLeaderId()))
@@ -84,7 +99,9 @@ func (n *Node) handleConnect() {
 
 func (n *Node) handleClient() {
 	n.connected = true
+	networkGlobalsMutex.Lock()
 	nodes.add(n)
+	networkGlobalsMutex.Unlock()
 	log("New connection!")
 
 	r := bufio.NewReader(n.connection)
@@ -141,8 +158,10 @@ func (n *Node) processMessage(m string) bool {
 				return false
 			}
 
+			n.lock.Lock()
 			n.id = id
 			n.r = relation(msg[parseStartIx+1])
+			n.lock.Unlock()
 
 			log(fmt.Sprintf("[%d] Received connect message: remote_id=0x%X, r=%s", messageTime, n.id, n.r))
 			n.handleConnect()
@@ -168,7 +187,10 @@ func (n *Node) processMessage(m string) bool {
 				return false
 			}
 
+			n.lock.Lock()
 			n.id = remoteNodeId
+			n.lock.Unlock()
+
 			log(fmt.Sprintf("[%d] Received netinfo: remote_id=0x%X, next_id=0x%X, leader_id=0x%X", messageTime, remoteNodeId, nextId, remoteLeaderId))
 
 			log(fmt.Sprintf("Attempting to connect to remote node, id=0x%X", remoteNodeId))
@@ -178,8 +200,10 @@ func (n *Node) processMessage(m string) bool {
 				log("Will now attempt to close the ring")
 				closeRing(nextId)
 			} else {
+				nextNode.lock.Lock()
 				nextNode.r = next
 				nextNode.id = nextId
+				nextNode.lock.Unlock()
 				log(fmt.Sprintf("Connection to remote node was successful, id=0x%X", nextId))
 
 				// notify the next node who we are
@@ -203,7 +227,9 @@ func (n *Node) processMessage(m string) bool {
 			}
 
 			log(fmt.Sprintf("[%d] Received closering: from_id=0x%X, sender_id=0x%X", messageTime, n.id, senderId))
+			networkGlobalsMutex.Lock()
 			prevNode := nodes.findSingleByRelation(prev)
+			networkGlobalsMutex.Unlock()
 
 			if prevNode != nil {
 				if senderId != nodeId {
@@ -223,14 +249,20 @@ func (n *Node) processMessage(m string) bool {
 					return false
 				}
 
+				prevNode.lock.Lock()
 				prevNode.r = prev
 				prevNode.id = senderId
+				prevNode.lock.Unlock()
 				prevNode.sendMessage(connect, idToString(nodeId), string(next))
 			}
 		}
 	}
 
 	return true
+}
+
+func nodeFromConnection(c net.Conn) *Node{
+	return &Node{0, none, c, false, &sync.Mutex{}}
 }
 
 func connectToClient(a string) *Node {
@@ -241,7 +273,7 @@ func connectToClient(a string) *Node {
 		return nil
 	}
 
-	n := &Node{0, none, c, false}
+	n := nodeFromConnection(c)
 	go n.handleClient()
 
 	return n

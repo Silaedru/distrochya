@@ -10,10 +10,11 @@ type nodeSyncLinkedListNode struct {
 type nodeSyncLinkedList struct {
 	head *nodeSyncLinkedListNode
 	lock *sync.Mutex
+	size uint32
 }
 
 func newNodeSyncLinkedList() *nodeSyncLinkedList {
-	return &nodeSyncLinkedList{nil, &sync.Mutex{}}
+	return &nodeSyncLinkedList{nil, &sync.Mutex{}, 0}
 }
 
 func (l *nodeSyncLinkedList) add(n *Node) {
@@ -33,6 +34,8 @@ func (l *nodeSyncLinkedList) add(n *Node) {
 
 		cn.next = newNode
 	}
+
+	l.size++
 }
 
 func (l *nodeSyncLinkedList) remove(n *Node) {
@@ -47,6 +50,7 @@ func (l *nodeSyncLinkedList) remove(n *Node) {
 
 	if cn.data == n {
 		l.head = cn.next
+		l.size--
 	} else {
 		for cn.next != nil {
 			pn := cn
@@ -54,7 +58,8 @@ func (l *nodeSyncLinkedList) remove(n *Node) {
 
 			if cn.data == n {
 				pn.next = cn.next
-				break
+				l.size--
+				return
 			}
 		}
 	}
@@ -92,4 +97,21 @@ func (l *nodeSyncLinkedList) findSingleByRelationExcludingId(r relation, id uint
 	}
 
 	return nil
+}
+
+func (l *nodeSyncLinkedList) toSlice() []*Node {
+	l.lock.Lock()
+	defer l.lock.Unlock()
+
+	rtn := make([]*Node, l.size)
+	i := 0
+	cn := l.head
+
+	for cn != nil {
+		rtn[i] = cn.data
+		cn = cn.next
+		i++
+	}
+
+	return rtn
 }
