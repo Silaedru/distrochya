@@ -43,8 +43,7 @@ var server net.Listener
 var networkStateMutex *sync.Mutex = &sync.Mutex{}
 var networkState string
 var nodeId uint64
-var leaderId uint64
-var nodesMutex *sync.Mutex = &sync.Mutex{}
+var serverGlobalsMutex *sync.Mutex = &sync.Mutex{}
 var nodes *nodeSyncLinkedList
 var ringBroken uint32 = 0
 
@@ -62,13 +61,13 @@ func readNetworkState() string {
 }
 
 func resetNode() {
-	nodesMutex.Lock()
-	defer nodesMutex.Unlock()
+	serverGlobalsMutex.Lock()
+	defer serverGlobalsMutex.Unlock()
 
 	server = nil
-	updateNetworkState(noNetwork)
 	nodeId = 0
-	leaderId = 0
+	updateNetworkState(noNetwork)
+	updateLeaderId(0)
 
 	for nodes.head != nil {
 		cn := nodes.head
@@ -79,8 +78,9 @@ func resetNode() {
 }
 
 func initNode(ip uint32, p uint16) {
-	nodesMutex.Lock()
-	defer nodesMutex.Unlock()
+	serverGlobalsMutex.Lock()
+	defer serverGlobalsMutex.Unlock()
+
 	resetTime()
 	rand.Seed(time.Now().UnixNano())
 	createNodeId(ip, p, uint16(rand.Uint32()))
@@ -173,7 +173,11 @@ func startServer(p uint16, newNetwork bool, resultChan chan bool) {
 	}
 
 	resultChan <- true
+
+	serverGlobalsMutex.Lock()
 	server = l
+	serverGlobalsMutex.Unlock()
+
 	log(fmt.Sprintf("Server started, listening on port %d. nodeId=0x%X", p, nodeId))
 
 	if newNetwork {

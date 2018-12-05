@@ -59,7 +59,8 @@ func (n *Node) handleConnect() {
 
 		// new node is joining the network
 		if readNetworkState() == singleNode {
-			n.sendMessage(netinfo, idToString(nodeId), idToString(nodeId), idToString(leaderId))
+			log(fmt.Sprintf("New connection with r=none, sending netinfo my_id=0x%X, next_id=0x%X (networkState=singleNode), leader_id=0x%X", nodeId, nodeId, readLeaderId()))
+			n.sendMessage(netinfo, idToString(nodeId), idToString(nodeId), idToString(readLeaderId()))
 			updateNetworkState(ring)
 		} else {
 			oldNext := nodes.findSingleByRelationExcludingId(next, n.id)
@@ -70,7 +71,8 @@ func (n *Node) handleConnect() {
 			oldNext.r = none
 			oldNext.disconnect()
 
-			n.sendMessage(netinfo, idToString(nodeId), idToString(oldNext.id), idToString(leaderId))
+			log(fmt.Sprintf("New connection with r=none, sending netinfo my_id=0x%X, next_id=0x%X, leader_id=0x%X", nodeId, oldNext.id, readLeaderId()))
+			n.sendMessage(netinfo, idToString(nodeId), idToString(oldNext.id), idToString(readLeaderId()))
 		}
 	} else if n.r == prev {
 	} else if n.r == next {
@@ -160,14 +162,14 @@ func (n *Node) processMessage(m string) bool {
 				return false
 			}
 
-			leaderId, err := stringToId(msg[parseStartIx+2])
+			remoteLeaderId, err := stringToId(msg[parseStartIx+2])
 			if err != nil {
-				debugLog("NETINFO leaderId err")
+				debugLog("NETINFO remoteLeaderId err")
 				return false
 			}
 
 			n.id = remoteNodeId
-			log(fmt.Sprintf("[%d] Received netinfo: remote_id=0x%X, next_id=0x%X, leader_id=0x%X", messageTime, remoteNodeId, nextId, leaderId))
+			log(fmt.Sprintf("[%d] Received netinfo: remote_id=0x%X, next_id=0x%X, leader_id=0x%X", messageTime, remoteNodeId, nextId, remoteLeaderId))
 
 			log(fmt.Sprintf("Attempting to connect to remote node, id=0x%X", remoteNodeId))
 			nextNode := connectToClient(idToEndpoint(nextId))
@@ -175,7 +177,6 @@ func (n *Node) processMessage(m string) bool {
 				log(fmt.Sprintf("Connection to remote node failed!, id=0x%X", remoteNodeId))
 				log("Will now attempt to close the ring")
 				closeRing(nextId)
-				//return false
 			} else {
 				nextNode.r = next
 				nextNode.id = nextId
@@ -188,9 +189,10 @@ func (n *Node) processMessage(m string) bool {
 				// if we have connected to somebody we have a ring
 				updateNetworkState(ring)
 			}
+
 			// in case there was a leader in the network
-			if leaderId != 0 {
-				handleNewLeader(leaderId)
+			if remoteLeaderId != 0 {
+				handleNewLeader(remoteLeaderId)
 			}
 
 		case closering:
@@ -200,19 +202,19 @@ func (n *Node) processMessage(m string) bool {
 				return false
 			}
 
-			log(fmt.Sprintf("Received closering: from_id=0x%X, sender_id=0x%X", n.id, senderId))
+			log(fmt.Sprintf("[%d] Received closering: from_id=0x%X, sender_id=0x%X", messageTime, n.id, senderId))
 			prevNode := nodes.findSingleByRelation(prev)
 
 			if prevNode != nil {
 				if senderId != nodeId {
-					log(fmt.Sprintf("Forwarding closering: target_id=0x%X, sender_id=0x%X", prevNode.id, senderId))
+					log(fmt.Sprintf("Forwarding closering (from time %d): target_id=0x%X, sender_id=0x%X", messageTime, prevNode.id, senderId))
 					prevNode.sendMessage(closering, msg[parseStartIx])
 				} else {
 					atomic.StoreUint32(&ringBroken, 0)
-					log(fmt.Sprintf("Closering propagation stopped: target_id=0x%X == sender_id=0x%X", prevNode.id, senderId))
+					log(fmt.Sprintf("Closering propagation stopped (from time %d): target_id=0x%X == sender_id=0x%X", messageTime, prevNode.id, senderId))
 				}
 			} else {
-				log(fmt.Sprintf("Received closering without having a prevNode! from_id=0x%X, sender_id=0x%X", n.id, senderId))
+				log(fmt.Sprintf("[%d] Received closering without having a prevNode! from_id=0x%X, sender_id=0x%X", messageTime, n.id, senderId))
 				log(fmt.Sprintf("Sending connect message: target_id=0x%X, my_id=0x%X, r=%s", senderId, nodeId, next))
 				prevNode = connectToClient(idToEndpoint(senderId))
 

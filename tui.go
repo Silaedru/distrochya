@@ -14,7 +14,7 @@ const (
 	chatInputViewName = "chatInput"
 	controlsViewName  = "controls"
 
-	logViewTitle    = "log"
+	logViewTitle    = "Log"
 	statusViewTitle = "Status"
 	chatViewTitle   = "Chat"
 	usersViewTitle  = "Users"
@@ -152,7 +152,7 @@ func updateStatus() {
 		"nodeId:   0x%X (%s)\n"+
 		"leaderId: 0x%X (%s)\n"+
 		"\n"+
-		"Connected nodes:\n%s\n\nEND", readTime(), readNetworkState(), nodeId, idToEndpoint(nodeId), leaderId, idToEndpoint(leaderId), nodesStr))
+		"Connected nodes:\n%s\n\nEND", readTime(), readNetworkState(), nodeId, idToEndpoint(nodeId), readLeaderId(), idToEndpoint(readLeaderId()), nodesStr))
 }
 
 func appendLogView(s string) {
@@ -261,6 +261,11 @@ func setupKeyBindings(g *gocui.Gui) {
 		return nil
 	})
 
+	g.SetKeybinding("", gocui.KeyF5, gocui.ModNone, func(g *gocui.Gui, v *gocui.View) error {
+		processCommand("/us", nil)
+		return nil
+	})
+
 	g.SetKeybinding("", gocui.KeyF10, gocui.ModNone, func(g *gocui.Gui, v *gocui.View) error {
 		return gocui.ErrQuit
 	})
@@ -290,7 +295,7 @@ func initializeTui() {
 			panic(err)
 		}
 
-		fmt.Fprint(controlsView, "\x1b[30;46m PgUp/PgDn: Scroll users \x1b[0m \x1b[30;46m F1: Help \x1b[0m \x1b[30;46m F10: Quit \x1b[0m")
+		fmt.Fprint(controlsView, "\x1b[30;46m PgUp/PgDn: Scroll users \x1b[0m \x1b[30;46m F1: Help \x1b[0m \x1b[30;46m F5: Refresh status \x1b[0m \x1b[30;46m F10: Quit \x1b[0m")
 
 		return nil
 	})
