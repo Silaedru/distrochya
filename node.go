@@ -66,10 +66,9 @@ func (n *Node) handleConnect() {
 	if n.r == none {
 		n.lock.Lock()
 		n.r = next
-		n.lock.Unlock()
 
 		// new node is joining the network
-		if readNetworkState() == singleNode {
+		/*if readNetworkState() == singleNode {
 			log(fmt.Sprintf("New connection with r=none, sending netinfo my_id=0x%X, next_id=0x%X (networkState=singleNode), leader_id=0x%X", nodeId, nodeId, readLeaderId()))
 			n.sendMessage(netinfo, idToString(nodeId), idToString(nodeId), idToString(readLeaderId()))
 			updateNetworkState(ring)
@@ -88,7 +87,28 @@ func (n *Node) handleConnect() {
 
 			log(fmt.Sprintf("New connection with r=none, sending netinfo my_id=0x%X, next_id=0x%X, leader_id=0x%X", nodeId, oldNext.id, readLeaderId()))
 			n.sendMessage(netinfo, idToString(nodeId), idToString(oldNext.id), idToString(readLeaderId()))
+		}*/
+
+		networkGlobalsMutex.Lock()
+		oldNext := nodes.findSingleByRelationExcludingId(next, n.id)
+
+		if oldNext == nil {
+			log(fmt.Sprintf("New connection with r=none, sending netinfo my_id=0x%X, next_id=0x%X (no existing nextnode found), leader_id=0x%X", nodeId, nodeId, readLeaderId()))
+			n.sendMessage(netinfo, idToString(nodeId), idToString(nodeId), idToString(readLeaderId()))
+			updateNetworkState(ring)
+		} else {
+			log(fmt.Sprintf("New next connection while in ring, closing oldNext; old_next_id=0x%X, new_next_id=0x%X", oldNext.id, n.id))
+			oldNext.lock.Lock()
+			oldNext.r = none
+			oldNext.lock.Unlock()
+			oldNext.disconnect()
+
+			log(fmt.Sprintf("New connection with r=none, sending netinfo my_id=0x%X, next_id=0x%X, leader_id=0x%X", nodeId, oldNext.id, readLeaderId()))
+			n.sendMessage(netinfo, idToString(nodeId), idToString(oldNext.id), idToString(readLeaderId()))
 		}
+
+		networkGlobalsMutex.Unlock()
+		n.lock.Unlock()
 	} else if n.r == prev {
 	} else if n.r == next {
 		atomic.StoreUint32(&ringBroken, 0)
