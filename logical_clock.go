@@ -9,7 +9,12 @@ var currentTime uint64 = 0
 var timeLock *sync.Mutex = &sync.Mutex{}
 
 func advanceTime() uint64 {
-	return atomic.AddUint64(&currentTime, 1)
+	timeLock.Lock()
+	defer timeLock.Unlock()
+
+	rtn := atomic.AddUint64(&currentTime, 1)
+
+	return rtn
 }
 
 func updateTime(t uint64) uint64 {
@@ -30,9 +35,16 @@ func updateTime(t uint64) uint64 {
 }
 
 func resetTime() {
+	timeLock.Lock()
+	defer timeLock.Unlock()
+
 	atomic.StoreUint64(&currentTime, 0)
 }
 
 func readTime() uint64 {
-	return atomic.LoadUint64(&currentTime)
+	timeLock.Lock()
+	defer timeLock.Unlock()
+
+	rtn := atomic.LoadUint64(&currentTime)
+	return rtn
 }

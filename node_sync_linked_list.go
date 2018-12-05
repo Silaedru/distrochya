@@ -2,26 +2,25 @@ package main
 
 import "sync"
 
-type nodeSynclinkedListNode struct {
+type nodeSyncLinkedListNode struct {
 	data *Node
-	next *nodeSynclinkedListNode
+	next *nodeSyncLinkedListNode
 }
 
-type NodeSyncLinkedList struct {
-	head *nodeSynclinkedListNode	
+type nodeSyncLinkedList struct {
+	head *nodeSyncLinkedListNode
 	lock *sync.Mutex
 }
 
-
-func NewNodeSyncLinkedList() *NodeSyncLinkedList {
-	return &NodeSyncLinkedList{nil, &sync.Mutex{}}
+func newNodeSyncLinkedList() *nodeSyncLinkedList {
+	return &nodeSyncLinkedList{nil, &sync.Mutex{}}
 }
 
-func (l *NodeSyncLinkedList) Add(n *Node) {
+func (l *nodeSyncLinkedList) add(n *Node) {
 	l.lock.Lock()
 	defer l.lock.Unlock()
 
-	newNode := &nodeSynclinkedListNode{n, nil}
+	newNode := &nodeSyncLinkedListNode{n, nil}
 
 	if l.head == nil {
 		l.head = newNode
@@ -36,7 +35,7 @@ func (l *NodeSyncLinkedList) Add(n *Node) {
 	}
 }
 
-func (l *NodeSyncLinkedList) Remove(n *Node) {
+func (l *nodeSyncLinkedList) remove(n *Node) {
 	l.lock.Lock()
 	defer l.lock.Unlock()
 
@@ -61,7 +60,7 @@ func (l *NodeSyncLinkedList) Remove(n *Node) {
 	}
 }
 
-func (l *NodeSyncLinkedList) FindSingleByRelation(r string) *Node {
+func (l *nodeSyncLinkedList) findSingleByRelation(r string) *Node {
 	l.lock.Lock()
 	defer l.lock.Unlock()
 
@@ -78,14 +77,14 @@ func (l *NodeSyncLinkedList) FindSingleByRelation(r string) *Node {
 	return nil
 }
 
-func (l *NodeSyncLinkedList) FindSingleByRelationExcludingId(r string, id uint64) *Node {
+func (l *nodeSyncLinkedList) findSingleByRelationExcludingId(r string, id uint64) *Node {
 	l.lock.Lock()
 	defer l.lock.Unlock()
 
 	cn := l.head
 
 	for cn != nil {
-		if cn.data.relation == r && cn.data.Id != id {
+		if cn.data.relation == r && cn.data.id != id {
 			return cn.data
 		}
 

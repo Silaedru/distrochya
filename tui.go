@@ -2,22 +2,22 @@ package main
 
 import (
 	"fmt"
-	"strings"
 	"github.com/jroimartin/gocui"
+	"strings"
 )
 
 const (
-	logViewName = "log"
-	statusViewName = "status"
-	chatViewName = "chat"
-	usersViewName = "users"
+	logViewName       = "log"
+	statusViewName    = "status"
+	chatViewName      = "chat"
+	usersViewName     = "users"
 	chatInputViewName = "chatInput"
-	controlsViewName = "controls"
+	controlsViewName  = "controls"
 
-	logViewTitle = "Log"
+	logViewTitle    = "log"
 	statusViewTitle = "Status"
-	chatViewTitle = "Chat"
-	usersViewTitle = "Users"
+	chatViewTitle   = "Chat"
+	usersViewTitle  = "Users"
 )
 
 type chatInput struct {
@@ -34,36 +34,47 @@ func (e *chatInput) onEnter(v *gocui.View) {
 
 	if len(input) > 1 && input[0] == '/' {
 		args := strings.Split(input, " ")
-		ProcessCommand(args[0], args[1:])
+		processCommand(args[0], args[1:])
 	} else {
-		ChatMessage(input)
-	}	
+		chatMessage(input)
+	}
 }
 
 func (e *chatInput) Edit(v *gocui.View, key gocui.Key, ch rune, mod gocui.Modifier) {
 	switch {
-		case key == gocui.KeyEnter: e.onEnter(v)
-		case key == gocui.KeySpace: v.EditWrite(' ')
-		
-		case key == gocui.KeyBackspace || key == gocui.KeyBackspace2: v.EditDelete(true)
-		case key == gocui.KeyDelete: v.EditDelete(false)
-		case key == gocui.KeyArrowLeft: v.MoveCursor(-1, 0, false)
-		case key == gocui.KeyArrowRight: v.MoveCursor(1, 0, false) 
-		
-		case key == gocui.KeyHome:
-		 	v.SetCursor(0, 0)
-		 	v.SetOrigin(0, 0)
-		case key == gocui.KeyArrowUp:
-			v.SetCursor(0, 0)
-			v.SetOrigin(0, 0)
+	case key == gocui.KeyEnter:
+		e.onEnter(v)
+	case key == gocui.KeySpace:
+		v.EditWrite(' ')
 
-		case key == gocui.KeyArrowDown: v.MoveCursor(len(v.Buffer())-1, 0, false)
-		case key == gocui.KeyEnd: v.MoveCursor(len(v.Buffer())-1, 0, false)
+	case key == gocui.KeyBackspace || key == gocui.KeyBackspace2:
+		v.EditDelete(true)
+	case key == gocui.KeyDelete:
+		v.EditDelete(false)
+	case key == gocui.KeyArrowLeft:
+		v.MoveCursor(-1, 0, false)
+	case key == gocui.KeyArrowRight:
+		v.MoveCursor(1, 0, false)
 
-		case key == gocui.KeyF1: return
-		case key == gocui.KeyF10: return
+	case key == gocui.KeyHome:
+		v.SetCursor(0, 0)
+		v.SetOrigin(0, 0)
+	case key == gocui.KeyArrowUp:
+		v.SetCursor(0, 0)
+		v.SetOrigin(0, 0)
 
-		case ch != 0 && mod == 0: v.EditWrite(ch)
+	case key == gocui.KeyArrowDown:
+		v.MoveCursor(len(v.Buffer())-1, 0, false)
+	case key == gocui.KeyEnd:
+		v.MoveCursor(len(v.Buffer())-1, 0, false)
+
+	case key == gocui.KeyF1:
+		return
+	case key == gocui.KeyF10:
+		return
+
+	case ch != 0 && mod == 0:
+		v.EditWrite(ch)
 	}
 }
 
@@ -78,7 +89,7 @@ func clearView(n string) {
 		view.Clear()
 		view.SetCursor(0, 0)
 		view.SetOrigin(0, 0)
-		
+
 		return nil
 	})
 }
@@ -114,46 +125,46 @@ func overwriteView(n string, s string) {
 	})
 }
 
-func UpdateUsers() {
+func updateUsers() {
 }
 
-func UpdateStatus() {
-	if !DebugEnabled {
+func updateStatus() {
+	if !debugEnabled {
 		return
 	}
 
-	DebugLog("UpdateStatus")
+	debugLog("updateStatus")
 
-	var nodes string
-	if Nodes != nil {
-		Nodes.lock.Lock()
-		cn := Nodes.head
+	var nodesStr string
+	if nodes != nil {
+		nodes.lock.Lock()
+		cn := nodes.head
 		for cn != nil {
-			nodes = fmt.Sprintf("%s\n   -> 0x%X (listening on %s): %s", nodes, cn.data.Id, IdToEndpoint(cn.data.Id), cn.data.relation)
+			nodesStr = fmt.Sprintf("%s\n   -> 0x%X (listening on %s): %s", nodesStr, cn.data.id, idToEndpoint(cn.data.id), cn.data.relation)
 			cn = cn.next
 		}
-		Nodes.lock.Unlock()
+		nodes.lock.Unlock()
 	}
 
-	overwriteView(statusViewName, fmt.Sprintf("" +
-		 "Logical time: %d\n"+
-		 "Network state: %s\n" +
-		 "NodeId:   0x%X (%s)\n"+
-		 "LeaderId: 0x%X (%s)\n"+
-		 "\n"+
-		 "Connected nodes:\n%s\n\nEND", readTime(), readNetworkState(), NodeId, IdToEndpoint(NodeId), LeaderId, IdToEndpoint(LeaderId), nodes))
+	overwriteView(statusViewName, fmt.Sprintf(""+
+		"Logical time: %d\n"+
+		"Network state: %s\n"+
+		"nodeId:   0x%X (%s)\n"+
+		"leaderId: 0x%X (%s)\n"+
+		"\n"+
+		"Connected nodes:\n%s\n\nEND", readTime(), readNetworkState(), nodeId, idToEndpoint(nodeId), leaderId, idToEndpoint(leaderId), nodesStr))
 }
 
-func AppendLog(s string) {
-	if !DebugEnabled {
+func appendLogView(s string) {
+	if !debugEnabled {
 		return
 	}
 
-	appendView(logViewName, s + "\n")
+	appendView(logViewName, s+"\n")
 }
 
-func AppendChat(s string) {
-	appendView(chatViewName, s + "\n")
+func appendChatView(s string) {
+	appendView(chatViewName, s+"\n")
 }
 
 func layout(g *gocui.Gui) error {
@@ -164,7 +175,7 @@ func layout(g *gocui.Gui) error {
 
 	curY := 0
 
-	if DebugEnabled {
+	if debugEnabled {
 		logViewWidth := maxW * 3 / 5
 		logViewHeight := maxH / 2
 
@@ -178,8 +189,8 @@ func layout(g *gocui.Gui) error {
 		logView.Title = logViewTitle
 		logView.Autoscroll = true
 
-		statusView, err := g.SetView(statusViewName, logViewWidth + 1, curY, maxW, logViewHeight)
-		
+		statusView, err := g.SetView(statusViewName, logViewWidth+1, curY, maxW, logViewHeight)
+
 		if err != nil && err != gocui.ErrUnknownView {
 			panic(err)
 		}
@@ -187,13 +198,13 @@ func layout(g *gocui.Gui) error {
 		statusView.Wrap = true
 		statusView.Title = statusViewTitle
 
-		curY = logViewHeight+1
+		curY = logViewHeight + 1
 	}
 
 	chatViewWidth := maxW * 4 / 5
 
 	chatView, err := g.SetView(chatViewName, 0, curY, chatViewWidth, maxH-3)
-	
+
 	if err != nil && err != gocui.ErrUnknownView {
 		panic(err)
 	}
@@ -202,8 +213,8 @@ func layout(g *gocui.Gui) error {
 	chatView.Autoscroll = true
 	chatView.Title = chatViewTitle
 
-	usersView, err := g.SetView(usersViewName, chatViewWidth+1, curY, maxW, maxH - 2)
-	
+	usersView, err := g.SetView(usersViewName, chatViewWidth+1, curY, maxW, maxH-2)
+
 	if err != nil && err != gocui.ErrUnknownView {
 		panic(err)
 	}
@@ -211,7 +222,7 @@ func layout(g *gocui.Gui) error {
 	usersView.Wrap = false
 	usersView.Title = usersViewTitle
 
-	chatInputView, err := g.SetView(chatInputViewName, 0, maxH - 4, chatViewWidth, maxH-2)
+	chatInputView, err := g.SetView(chatInputViewName, 0, maxH-4, chatViewWidth, maxH-2)
 
 	if err != nil && err != gocui.ErrUnknownView {
 		panic(err)
@@ -221,12 +232,12 @@ func layout(g *gocui.Gui) error {
 	chatInputView.Wrap = false
 	chatInputView.Editor = &chatInput{}
 
-	controlsView, err := g.SetView(controlsViewName, 0, maxH - 2, maxW, maxH)
-	
+	controlsView, err := g.SetView(controlsViewName, 0, maxH-2, maxW, maxH)
+
 	if err != nil && err != gocui.ErrUnknownView {
 		panic(err)
 	}
-	
+
 	controlsView.Wrap = false
 	controlsView.Frame = false
 
@@ -236,21 +247,21 @@ func layout(g *gocui.Gui) error {
 }
 
 func setupKeyBindings(g *gocui.Gui) {
-	g.SetKeybinding("", gocui.KeyPgup, gocui.ModNone, func (g *gocui.Gui, v *gocui.View) error { 
+	g.SetKeybinding("", gocui.KeyPgup, gocui.ModNone, func(g *gocui.Gui, v *gocui.View) error {
 		clearView(chatViewName)
 		return nil
 	})
 
-	g.SetKeybinding("", gocui.KeyPgdn, gocui.ModNone, func (g *gocui.Gui, v *gocui.View) error { 
+	g.SetKeybinding("", gocui.KeyPgdn, gocui.ModNone, func(g *gocui.Gui, v *gocui.View) error {
 		return nil
 	})
 
-	g.SetKeybinding("", gocui.KeyF1, gocui.ModNone, func (g *gocui.Gui, v *gocui.View) error { 
-		ProcessCommand("/help", nil)
+	g.SetKeybinding("", gocui.KeyF1, gocui.ModNone, func(g *gocui.Gui, v *gocui.View) error {
+		processCommand("/help", nil)
 		return nil
 	})
 
-	g.SetKeybinding("", gocui.KeyF10, gocui.ModNone, func (g *gocui.Gui, v *gocui.View) error { 
+	g.SetKeybinding("", gocui.KeyF10, gocui.ModNone, func(g *gocui.Gui, v *gocui.View) error {
 		return gocui.ErrQuit
 	})
 }
@@ -284,7 +295,7 @@ func InitializeTui() {
 		return nil
 	})
 
-	UpdateStatus()
+	updateStatus()
 
 	gui.MainLoop()
 }
