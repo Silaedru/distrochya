@@ -3,6 +3,8 @@ package main
 import (
 	"fmt"
 	"strconv"
+	"math/rand"
+	"time"
 )
 
 type command struct {
@@ -119,6 +121,7 @@ func initCommands() {
 }
 
 func main() {
+	rand.Seed(time.Now().UnixNano())
 	initCommands()
 	initializeTui()
 }

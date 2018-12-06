@@ -28,6 +28,8 @@ const (
 	connect   = "con"       // params=id;requested_relation
 	netinfo   = "nei"       // params=node_id;next_id;leader_id
 	closering = "closering" // params=sender_id
+	election  = "election"  // params=candidate_id
+	elected   = "elected"   // params=leader_id
 
 	// network states
 	noNetwork  = "noNetwork"
@@ -37,6 +39,9 @@ const (
 	// other
 	ringRepairTimeoutSeconds  = 3
 	sendMessageTimeoutSeconds = 3
+	leaderElectionTimeoutSeconds = 5
+	leaderElectionMinimumWait = 1
+	leaderElectionMaximumWait = 15
 )
 
 var networkGlobalsMutex *sync.Mutex = &sync.Mutex{}
@@ -54,6 +59,11 @@ func updateNetworkState(s string) {
 	defer networkStateMutex.Unlock()
 	log("Network state changed to " + s)
 	networkState = s
+
+	if s == singleNode {
+		log("NETWORK STATE CHANGED TO SINGLE NODE, ASSUMING LEADER ROLE")
+		handleNewLeader(nodeId)
+	}
 }
 
 func readNetworkState() string {
@@ -88,7 +98,6 @@ func initNode(ip uint32, p uint16) {
 	defer networkGlobalsMutex.Unlock()
 
 	resetTime()
-	rand.Seed(time.Now().UnixNano())
 	nodeId = createNodeId(ip, p, uint16(rand.Uint32()))
 	nodes = newNodeSyncLinkedList()
 }
@@ -132,12 +141,7 @@ func closeRing(oldNextNodeId uint64) {
 		return
 	}
 
-	networkGlobalsMutex.Lock()
-	var prevNode *Node
-	if nodes != nil {
-		prevNode = nodes.findSingleByRelation(prev)
-	}
-	networkGlobalsMutex.Unlock()
+	prevNode := findNodeByRelation(prev)
 
 	if prevNode == nil {
 		updateNetworkState(singleNode)
@@ -164,6 +168,50 @@ func closeRing(oldNextNodeId uint64) {
 			}()
 		}
 	}
+}
+
+func findNodeByRelation(r relation) *Node {
+	networkGlobalsMutex.Lock()
+	
+	var rtn *Node
+	if nodes != nil {
+		rtn = nodes.findSingleByRelation(r)
+	}
+
+	networkGlobalsMutex.Unlock()
+
+	return rtn
+}
+
+func findNodeByRelationExcludingId(r relation, id uint64) *Node {
+	networkGlobalsMutex.Lock()
+	
+	var rtn *Node
+	if nodes != nil {
+		rtn = nodes.findSingleByRelationExcludingId(r, id)
+	}
+
+	networkGlobalsMutex.Unlock()
+
+	return rtn
+}
+
+func removeNode(n *Node) {
+	networkGlobalsMutex.Lock()
+	defer networkGlobalsMutex.Unlock()
+
+	if nodes != nil {
+		nodes.remove(n)
+	}
+}
+
+func addNode(n *Node) {
+	networkGlobalsMutex.Lock()
+	defer networkGlobalsMutex.Unlock()
+
+	if nodes != nil {
+		nodes.add(n)
+	}	
 }
 
 func createNodeId(i uint32, p uint16, f uint16) uint64 {
@@ -207,8 +255,6 @@ func startServer(p uint16, newNetwork bool, resultChan chan bool) {
 
 	if newNetwork {
 		updateNetworkState(singleNode)
-		log("NEW NETWORK -> ASSUMING LEADER ROLE")
-		handleNewLeader(nodeId)
 	}
 
 	// incoming connections
@@ -255,17 +301,17 @@ func joinNetwork(a string, p uint16) {
 	go startServer(p, false, serverStartResultChan)
 
 	if <-serverStartResultChan {
-		networkNode := connectToClient(a)
+		node := connectToClient(a)
 
-		if networkNode == nil {
+		if node == nil {
 			disconnect()
 			userError("Failed to connect to the remote network")
 			return
 		}
-		networkNode.r = prev
+		node.r = prev
 
 		log(fmt.Sprintf("Sending connect message: address=%s, my_id=0x%X, r=%s", a, nodeId, none))
-		networkNode.sendMessage(connect, idToString(nodeId), string(none))
+		node.sendMessage(connect, idToString(nodeId), string(none))
 	} else {
 		resetNode()
 	}

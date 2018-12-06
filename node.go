@@ -46,52 +46,42 @@ func (n *Node) sendMessage(m ...string) {
 func (n *Node) handleDisconnect() {
 	n.lock.Lock()
 	n.connected = false
+	id := n.id
+	r := n.r
 	n.lock.Unlock()
 
-	networkGlobalsMutex.Lock()
-	if nodes != nil {
-		nodes.remove(n)
-	}
-	networkGlobalsMutex.Unlock()
+	removeNode(n)
 
-	// connection to next node lost
-	if n.r == next {
-		closeRing(n.id)
+	if r == next {
+		closeRing(id)
+
+		/*if id == readLeaderId() || id == getOldLeaderId() {
+			if readNetworkState() == ring {
+				log("Detected leader node disconnect from r=next")
+				updateLeaderId(0)
+				setElectionStartTriggerFlag()
+				log("Election start trigger flag set")
+			}
+		}*/
+	} else if r == leader {
+		if readNetworkState() == ring {
+			log("Leader lost!")
+			updateLeaderId(0)
+		}
 	}
 
 	updateStatus()
 }
 
 func (n *Node) handleConnect() {
+	n.lock.Lock()
+	defer n.lock.Unlock()
+
 	if n.r == none {
-		n.lock.Lock()
 		n.r = next
 
-		// new node is joining the network
-		/*if readNetworkState() == singleNode {
-			log(fmt.Sprintf("New connection with r=none, sending netinfo my_id=0x%X, next_id=0x%X (networkState=singleNode), leader_id=0x%X", nodeId, nodeId, readLeaderId()))
-			n.sendMessage(netinfo, idToString(nodeId), idToString(nodeId), idToString(readLeaderId()))
-			updateNetworkState(ring)
-		} else {
-			networkGlobalsMutex.Lock()
-			oldNext := nodes.findSingleByRelationExcludingId(next, n.id)
-			networkGlobalsMutex.Unlock()
-			if oldNext == nil {
-				panic("invalid network state: ring without next node")
-			}
-			log(fmt.Sprintf("New next connection while in ring, closing oldNext; old_next_id=0x%X, new_next_id=0x%X", oldNext.id, n.id))
-			oldNext.lock.Lock()
-			oldNext.r = none
-			oldNext.lock.Unlock()
-			oldNext.disconnect()
-
-			log(fmt.Sprintf("New connection with r=none, sending netinfo my_id=0x%X, next_id=0x%X, leader_id=0x%X", nodeId, oldNext.id, readLeaderId()))
-			n.sendMessage(netinfo, idToString(nodeId), idToString(oldNext.id), idToString(readLeaderId()))
-		}*/
-
-		networkGlobalsMutex.Lock()
-		oldNext := nodes.findSingleByRelationExcludingId(next, n.id)
-
+		oldNext := findNodeByRelationExcludingId(next, n.id)
+		
 		if oldNext == nil {
 			log(fmt.Sprintf("New connection with r=none, sending netinfo my_id=0x%X, next_id=0x%X (no existing nextnode found), leader_id=0x%X", nodeId, nodeId, readLeaderId()))
 			n.sendMessage(netinfo, idToString(nodeId), idToString(nodeId), idToString(readLeaderId()))
@@ -107,22 +97,28 @@ func (n *Node) handleConnect() {
 			n.sendMessage(netinfo, idToString(nodeId), idToString(oldNext.id), idToString(readLeaderId()))
 		}
 
-		networkGlobalsMutex.Unlock()
-		n.lock.Unlock()
 	} else if n.r == prev {
 	} else if n.r == next {
 		atomic.StoreUint32(&ringBroken, 0)
+
+		log("Ring repaired (side missing next)")
+
+		if isElectionStartTriggerFlagSet() {
+			log("Detected set election start trigger - starting leader election")
+			resetElectionStartTriggerFlag()
+			startElectionTimer(0)
+		}
+	} else if n.r == follower {
+
 	} else {
 		panic("invalid connection request")
 	}
 }
 
 func (n *Node) handleClient() {
-	n.connected = true
-	networkGlobalsMutex.Lock()
-	nodes.add(n)
-	networkGlobalsMutex.Unlock()
-	log("New connection!")
+	addNode(n)
+
+	log("New connection")
 
 	r := bufio.NewReader(n.connection)
 
@@ -186,9 +182,7 @@ func (n *Node) processMessage(m string) bool {
 			log(fmt.Sprintf("[%d] Received connect message: remote_id=0x%X, r=%s", messageTime, n.id, n.r))
 			n.handleConnect()
 
-		// response to initial connect request containing basic network info
 		case netinfo:
-			// will happen when response to closering connection is received
 			remoteNodeId, err := stringToId(msg[parseStartIx])
 			if err != nil {
 				debugLog("NETINFO remoteNodeId err")
@@ -247,9 +241,7 @@ func (n *Node) processMessage(m string) bool {
 			}
 
 			log(fmt.Sprintf("[%d] Received closering: from_id=0x%X, sender_id=0x%X", messageTime, n.id, senderId))
-			networkGlobalsMutex.Lock()
-			prevNode := nodes.findSingleByRelation(prev)
-			networkGlobalsMutex.Unlock()
+			prevNode := findNodeByRelation(prev)
 
 			if prevNode != nil {
 				if senderId != nodeId {
@@ -274,6 +266,69 @@ func (n *Node) processMessage(m string) bool {
 				prevNode.id = senderId
 				prevNode.lock.Unlock()
 				prevNode.sendMessage(connect, idToString(nodeId), string(next))
+				log("Ring repaired (side missing prev)")
+			}
+
+		case election:
+			candidateId, err := stringToId(msg[parseStartIx])
+
+			if err != nil {
+				debugLog("ELECTION candidate id failure")
+				return false
+			}
+
+			log(fmt.Sprintf("[%d] Received election, from_id=0x%X, candidate_id=0x%X", messageTime, n.id, candidateId))
+
+			nextNode := findNodeByRelation(next)
+
+			if nextNode == nil {
+				log(fmt.Sprintf("[%d] No nextnode to forward election to! Discarding.", messageTime))
+			} else {
+				if candidateId == nodeId {
+					log(fmt.Sprintf("[%d] This node has been elected as a new leader! (candidate_id == my_id)", messageTime))
+
+					log(fmt.Sprintf("[%d] Sending elected to target_id=0x%X", messageTime, nextNode.id))					
+					nextNode.sendMessage(elected, idToString(nodeId))
+					handleNewLeader(nodeId)
+				} else if candidateId > nodeId {
+					log(fmt.Sprintf("[%d] Forwarding election (candidate_id > my_id), target_id=0x%X, candidate_id=0x%X", messageTime, nextNode.id, candidateId))
+					setElectionParticipated()
+					
+					nextNode.sendMessage(election, idToString(candidateId))
+				} else {
+					log(fmt.Sprintf("[%d] Discarding election (candidate_id < my_id)", messageTime))
+
+					if !hasElectionParticipated() {
+						setElectionParticipated()
+						log(fmt.Sprintf("[%d] Sending election, target_id=0x%X, candidate_id=0x%X", messageTime, nextNode.id, nodeId))
+						nextNode.sendMessage(election, idToString(nodeId))
+					}
+				}
+			}
+			resetElectionTimer()
+
+		case elected:
+			newLeaderId, err := stringToId(msg[parseStartIx])
+
+			if err != nil {
+				debugLog("ELECTED new leader id failure")
+				return false
+			}
+			log(fmt.Sprintf("[%d] Received elected, from_id=0x%X, leader_id=0x%X", messageTime, n.id, newLeaderId))
+
+			if newLeaderId != nodeId {
+				nextNode := findNodeByRelation(next)
+
+				if nextNode != nil {
+					log(fmt.Sprintf("[%d] Forwarding elected, target_id=0x%X, leader_id=0x%X", messageTime, nextNode.id, newLeaderId))
+					nextNode.sendMessage(elected, idToString(newLeaderId))
+				} else {
+					log(fmt.Sprintf("[%d] No next node fo forward elected to.", messageTime))
+				}
+
+				handleNewLeader(newLeaderId)
+			} else {
+				log(fmt.Sprintf("[%d] Received elected with leader_id == my_id, stopping propagation, from_id=0x%X, leader_id=0x%X", messageTime, n.id, newLeaderId))
 			}
 		}
 	}
@@ -282,7 +337,7 @@ func (n *Node) processMessage(m string) bool {
 }
 
 func nodeFromConnection(c net.Conn) *Node{
-	return &Node{0, none, c, false, &sync.Mutex{}}
+	return &Node{0, none, c, true, &sync.Mutex{}}
 }
 
 func connectToClient(a string) *Node {
