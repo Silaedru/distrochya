@@ -40,7 +40,7 @@ const (
 	ringRepairTimeoutSeconds  = 3
 	sendMessageTimeoutSeconds = 3
 	leaderElectionTimeoutSeconds = 5
-	leaderElectionMinimumWait = 1
+	leaderElectionMinimumWait = 3
 	leaderElectionMaximumWait = 15
 )
 
@@ -81,7 +81,6 @@ func resetNode() {
 
 	server = nil
 	nodeId = 0
-	updateNetworkState(noNetwork)
 	updateLeaderId(0)
 
 	connectedNodes := nodes.toSlice()
@@ -91,6 +90,7 @@ func resetNode() {
 	}
 
 	nodes = nil
+	updateNetworkState(noNetwork)
 }
 
 func initNode(ip uint32, p uint16) {
@@ -136,8 +136,19 @@ func stringToId(s string) (uint64, error) {
 	return strconv.ParseUint(s, 16, 64)
 }
 
+func isNetworkRunning() bool {
+	networkGlobalsMutex.Lock()
+	defer networkGlobalsMutex.Unlock()
+	
+	return server != nil
+}
+
 func closeRing(oldNextNodeId uint64) {
 	if atomic.LoadUint32(&ringBroken) == 1 {
+		return
+	}
+
+	if !isNetworkRunning() {
 		return
 	}
 
@@ -219,6 +230,8 @@ func createNodeId(i uint32, p uint16, f uint16) uint64 {
 }
 
 func disconnect() {
+	defer updateStatus()
+
 	networkGlobalsMutex.Lock()
 	if server == nil {
 		userError("not connected to any network")
@@ -232,7 +245,6 @@ func disconnect() {
 
 	userEvent("disconnected")
 	log("Server stopped")
-	updateStatus()
 }
 
 func startServer(p uint16, newNetwork bool, resultChan chan bool) {
@@ -272,7 +284,9 @@ func startServer(p uint16, newNetwork bool, resultChan chan bool) {
 }
 
 func startNetwork(p uint16) {
-	if server != nil {
+	defer updateStatus()
+
+	if isNetworkRunning() {
 		userError("already connected")
 		return
 	}
@@ -285,12 +299,10 @@ func startNetwork(p uint16) {
 	if !<-serverStartResultChan {
 		resetNode()
 	}
-
-	updateStatus()
 }
 
 func joinNetwork(a string, p uint16) {
-	if server != nil {
+	if isNetworkRunning() {
 		userError("already connected")
 		return
 	}

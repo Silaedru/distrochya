@@ -44,6 +44,8 @@ func (n *Node) sendMessage(m ...string) {
 }
 
 func (n *Node) handleDisconnect() {
+	defer updateStatus()
+	
 	n.lock.Lock()
 	n.connected = false
 	id := n.id
@@ -55,22 +57,20 @@ func (n *Node) handleDisconnect() {
 	if r == next {
 		closeRing(id)
 
-		/*if id == readLeaderId() || id == getOldLeaderId() {
+		if id == readLeaderId() || id == getOldLeaderId() {
 			if readNetworkState() == ring {
 				log("Detected leader node disconnect from r=next")
 				updateLeaderId(0)
 				setElectionStartTriggerFlag()
 				log("Election start trigger flag set")
 			}
-		}*/
+		}
 	} else if r == leader {
 		if readNetworkState() == ring {
 			log("Leader lost!")
 			updateLeaderId(0)
 		}
 	}
-
-	updateStatus()
 }
 
 func (n *Node) handleConnect() {

@@ -151,6 +151,10 @@ func getChatName() string {
 }
 
 func connectToLeader() {
+	/*if !isNetworkRunning() {
+		return
+	}*/
+
 	if len(getChatName()) < 1 {
 		userError("Unable to connect: no chat nickname set")
 		return
