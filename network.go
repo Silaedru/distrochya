@@ -24,17 +24,21 @@ const (
 
 	// messages
 	// magic;message;params\n
+	sepchar   = ";"
 	magic     = "d"
-	connect   = "con"       // params=id;requested_relation
-	netinfo   = "nei"       // params=node_id;next_id;leader_id
+	connect   = "connect"   // params=id;requested_relation;params
+	netinfo   = "netinfo"   // params=node_id;next_id;leader_id
 	closering = "closering" // params=sender_id
 	election  = "election"  // params=candidate_id
 	elected   = "elected"   // params=leader_id
+	userlist  = "userlist"  // params=[users]
+	chatmessage = "chatmessage" // params=user;message
+	chatmessagesend = "chmsgsend" // params=message
 
 	// network states
-	noNetwork  = "noNetwork"
-	singleNode = "singleNode"
-	ring       = "ring"
+	noNetwork  = "No Network"
+	singleNode = "Single Node"
+	ring       = "Ring"
 
 	// other
 	ringRepairTimeoutSeconds  = 3
@@ -82,6 +86,7 @@ func resetNode() {
 	server = nil
 	nodeId = 0
 	updateLeaderId(0)
+	resetChatConnections()
 
 	connectedNodes := nodes.toSlice()
 	
@@ -141,6 +146,28 @@ func isNetworkRunning() bool {
 	defer networkGlobalsMutex.Unlock()
 	
 	return server != nil
+}
+
+func broadcastToFollowers(m ...string) {
+	networkGlobalsMutex.Lock()
+	defer networkGlobalsMutex.Unlock()
+
+	if nodes != nil {
+		nodes.lock.Lock()
+		defer nodes.lock.Unlock()
+
+		cn := nodes.head 
+
+		for cn != nil {
+			//cn.data.lock.Lock()
+			if cn.data.r == follower {
+				cn.data.sendMessage(m...)
+			}
+			//cn.data.lock.Unlock()
+
+			cn = cn.next
+		}
+	}
 }
 
 func closeRing(oldNextNodeId uint64) {

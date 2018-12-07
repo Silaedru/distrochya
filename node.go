@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"bytes"
 	"fmt"
 	"net"
 	"strconv"
@@ -70,10 +71,17 @@ func (n *Node) handleDisconnect() {
 			log("Leader lost!")
 			updateLeaderId(0)
 		}
+	} else if r == follower {
+		removeChatConnection(n)
+		log(fmt.Sprintf("Follower lost (id=0x%X), broadcasting updated userlist", n.id))
+
+		msg := []string{userlist}
+		msg = append(msg, getConnectedNames()[:]...)
+		broadcastToFollowers(msg[:]...)
 	}
 }
 
-func (n *Node) handleConnect() {
+func (n *Node) handleConnect(params []string) {
 	n.lock.Lock()
 	defer n.lock.Unlock()
 
@@ -83,7 +91,7 @@ func (n *Node) handleConnect() {
 		oldNext := findNodeByRelationExcludingId(next, n.id)
 		
 		if oldNext == nil {
-			log(fmt.Sprintf("New connection with r=none, sending netinfo my_id=0x%X, next_id=0x%X (no existing nextnode found), leader_id=0x%X", nodeId, nodeId, readLeaderId()))
+			log(fmt.Sprintf("New connection with r=none (id=0x%X), sending netinfo my_id=0x%X, next_id=0x%X (no existing nextnode found), leader_id=0x%X", n.id, nodeId, nodeId, readLeaderId()))
 			n.sendMessage(netinfo, idToString(nodeId), idToString(nodeId), idToString(readLeaderId()))
 			updateNetworkState(ring)
 		} else {
@@ -93,7 +101,7 @@ func (n *Node) handleConnect() {
 			oldNext.lock.Unlock()
 			oldNext.disconnect()
 
-			log(fmt.Sprintf("New connection with r=none, sending netinfo my_id=0x%X, next_id=0x%X, leader_id=0x%X", nodeId, oldNext.id, readLeaderId()))
+			log(fmt.Sprintf("New connection with r=none (id=0x%X), sending netinfo my_id=0x%X, next_id=0x%X, leader_id=0x%X", n.id, nodeId, oldNext.id, readLeaderId()))
 			n.sendMessage(netinfo, idToString(nodeId), idToString(oldNext.id), idToString(readLeaderId()))
 		}
 
@@ -109,7 +117,12 @@ func (n *Node) handleConnect() {
 			startElectionTimer(0)
 		}
 	} else if n.r == follower {
+		addChatConnection(n, params[0])
+		log(fmt.Sprintf("New connection with r=follower (id=0x%X), broadcasting updated userlist", n.id))
 
+		msg := []string{userlist}
+		msg = append(msg, getConnectedNames()[:]...)
+		broadcastToFollowers(msg[:]...)
 	} else {
 		panic("invalid connection request")
 	}
@@ -149,7 +162,7 @@ func (n *Node) handleClient() {
 
 // returns false on failure
 func (n *Node) processMessage(m string) bool {
-	msg := strings.Split(m, ";")
+	msg := strings.Split(m, sepchar)
 
 	if len(msg) < 3 || msg[0] != magic {
 		return false
@@ -180,7 +193,7 @@ func (n *Node) processMessage(m string) bool {
 			n.lock.Unlock()
 
 			log(fmt.Sprintf("[%d] Received connect message: remote_id=0x%X, r=%s", messageTime, n.id, n.r))
-			n.handleConnect()
+			n.handleConnect(msg[parseStartIx+2:])
 
 		case netinfo:
 			remoteNodeId, err := stringToId(msg[parseStartIx])
@@ -330,7 +343,39 @@ func (n *Node) processMessage(m string) bool {
 			} else {
 				log(fmt.Sprintf("[%d] Received elected with leader_id == my_id, stopping propagation, from_id=0x%X, leader_id=0x%X", messageTime, n.id, newLeaderId))
 			}
+
+		case chatmessagesend:
+			log(fmt.Sprintf("[%d] Received chatmessagesend from_id=0x%X", messageTime, n.id))
+
+			user := getUsername(n)
+
+			chatmsg := []string{chatmessage, user}
+			chatmsg = append(chatmsg, msg[parseStartIx:]...)
+
+			log(fmt.Sprintf("Broadcasting chatmessagesend received at %d from_id=0x%X", messageTime, n.id))
+			broadcastToFollowers(chatmsg[:]...)
+
+		case chatmessage:
+			log(fmt.Sprintf("[%d] Received chatmessage from_id=0x%X", messageTime, n.id))
+			user := msg[parseStartIx]
+			var chatmsg bytes.Buffer
+
+			for i:=parseStartIx+1; i<len(msg); i++ {
+				chatmsg.WriteString(msg[i])
+				
+				if i+1<len(msg) {
+					chatmsg.WriteString(sepchar)
+				}
+			}
+
+			chatMessageReceived(user, chatmsg.String())
+
+		case userlist:
+			log(fmt.Sprintf("[%d] Received userlist from_id=0x%X", messageTime, n.id))
+			users := msg[parseStartIx:]
+			updateUsers(users)
 		}
+
 	}
 
 	return true

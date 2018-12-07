@@ -5,6 +5,7 @@ import (
 	"github.com/jroimartin/gocui"
 	"strings"
 	"time"
+	"bytes"
 )
 
 const (
@@ -71,6 +72,8 @@ func (e *chatInput) Edit(v *gocui.View, key gocui.Key, ch rune, mod gocui.Modifi
 
 	case key == gocui.KeyF1:
 		return
+	case key == gocui.KeyF5:
+		return
 	case key == gocui.KeyF10:
 		return
 
@@ -126,7 +129,14 @@ func overwriteView(n string, s string) {
 	})
 }
 
-func updateUsers() {
+func updateUsers(us []string) {
+	var b bytes.Buffer
+
+	for _, u := range(us) {
+		b.WriteString(fmt.Sprintf("%s\n", u))
+	}
+
+	overwriteView(usersViewName, b.String())
 }
 
 func updateStatus() {

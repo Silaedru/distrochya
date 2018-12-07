@@ -48,6 +48,10 @@ func userEvent(m string) {
 	appendChatView(fmt.Sprintf("Info: %s", m))
 }
 
+func chatMessageReceived(u string, s string) {
+	appendChatView(fmt.Sprintf("<%s>: %s", u, s))
+}
+
 func initCommands() {
 	commands = make(map[string]*command)
 

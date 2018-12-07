@@ -12,7 +12,7 @@ var leaderId uint64
 var oldLeaderId uint64
 var chatParticipation uint32 = 1
 var chatNameMutex *sync.Mutex = &sync.Mutex{}
-var chatName string = "test"
+var chatName string = "User"
 
 var leaderElectionMutex *sync.Mutex = &sync.Mutex{}
 var leaderElectionTimer *time.Timer
@@ -151,10 +151,6 @@ func getChatName() string {
 }
 
 func connectToLeader() {
-	/*if !isNetworkRunning() {
-		return
-	}*/
-
 	if len(getChatName()) < 1 {
 		userError("Unable to connect: no chat nickname set")
 		return
@@ -185,6 +181,7 @@ func connectToLeader() {
 func handleNewLeader(id uint64) {
 	defer updateStatus()
 
+	resetChatConnections()
 	updateLeaderId(id)
 
 	log(fmt.Sprintf("New leader elected, nodeId=0x%X", id))
@@ -195,5 +192,16 @@ func handleNewLeader(id uint64) {
 }
 
 func chatMessage(m string) {
+	if getChatParticipation() > 0 {
+		leader := findNodeByRelation(leader)
 
+		if leader != nil {
+			log(fmt.Sprintf("Sending chatmessagesend, target_id=0x%X", leader.id))
+			leader.sendMessage(chatmessagesend, m)
+		} else {
+			userError("no leader")
+		}
+	} else {
+		userError("no chat participation")
+	}
 }
