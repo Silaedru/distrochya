@@ -87,6 +87,7 @@ func resetNode() {
 	nodeId = 0
 	updateLeaderId(0)
 	resetChatConnections()
+	updateUsers(nil)
 
 	connectedNodes := nodes.toSlice()
 	
@@ -103,6 +104,8 @@ func initNode(ip uint32, p uint16) {
 	defer networkGlobalsMutex.Unlock()
 
 	resetTime()
+	updateUsers(nil)
+	
 	nodeId = createNodeId(ip, p, uint16(rand.Uint32()))
 	nodes = newNodeSyncLinkedList()
 }
@@ -159,11 +162,9 @@ func broadcastToFollowers(m ...string) {
 		cn := nodes.head 
 
 		for cn != nil {
-			//cn.data.lock.Lock()
 			if cn.data.r == follower {
 				cn.data.sendMessage(m...)
 			}
-			//cn.data.lock.Unlock()
 
 			cn = cn.next
 		}

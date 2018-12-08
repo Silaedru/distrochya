@@ -5,6 +5,8 @@ import (
 	"strconv"
 	"math/rand"
 	"time"
+	"bytes"
+	"strings"
 )
 
 type command struct {
@@ -59,7 +61,7 @@ func initCommands() {
 		msg := "\nAvailable commands:"
 
 		for n, c := range commands {
-			msg = fmt.Sprintf("%s\n%s %s   \t%s", msg, n, c.usage, c.helpString)
+			msg = fmt.Sprintf("%s\n%s %s             %s", msg, n, c.usage, c.helpString)
 		}
 
 		appendChatView(msg + "\n")
@@ -105,6 +107,21 @@ func initCommands() {
 		updateStatus()
 	}}
 
+	commands["/nick"] = &command{"Sets a new nickname", "[new nickname]", func(args []string) {
+		if len(args) > 0 {
+			var nick bytes.Buffer
+
+			for _, s := range(args) {
+				nick.WriteString(s)
+			}
+
+			nickStr := strings.Replace(nick.String(), ";", "", -1)
+			setChatName(nickStr)
+		}
+
+		appendChatView(fmt.Sprintf("Nickname: %s", getChatName()))
+	}}
+
 	commands["/a"] = &command{"/start 9999", "", func(args []string) {
 		processCommand("/start", []string{"9999"})
 	}}
@@ -116,6 +133,9 @@ func initCommands() {
 	}}
 	commands["/d"] = &command{"/connect localhost:9999 9996", "", func(args []string) {
 		processCommand("/connect", []string{"localhost:9999", "9996"})
+	}}
+	commands["/e"] = &command{"/connect localhost:9999 9995", "", func(args []string) {
+		processCommand("/connect", []string{"localhost:9999", "9995"})
 	}}
 
 	commands["/m"] = &command{"mark", "", func(args []string) {

@@ -311,17 +311,13 @@ func initializeTui() {
 	gui.Mouse = false
 	gui.InputEsc = true
 
-	gui.Update(func(g *gocui.Gui) error {
-		controlsView, err := g.View(controlsViewName)
-
-		if err != nil {
-			panic(err)
-		}
-
-		fmt.Fprint(controlsView, "\x1b[30;46m PgUp/PgDn: Scroll users \x1b[0m \x1b[30;46m F1: Help \x1b[0m \x1b[30;46m F5: Refresh status \x1b[0m \x1b[30;46m F10: Quit \x1b[0m")
-
-		return nil
-	})
+	overwriteView(controlsViewName, "" +
+		"\x1b[30;46m PgUp/PgDn: Scroll users \x1b[0m " +
+		"\x1b[30;46m F1: Help \x1b[0m " +
+		"\x1b[30;46m F5: Refresh status \x1b[0m " +
+		"\x1b[30;46m F10: Quit \x1b[0m")
+	
+	userEvent(fmt.Sprintf("using default nickname: %s", getChatName()))
 
 	updateStatus()
 
