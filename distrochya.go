@@ -122,6 +122,20 @@ func initCommands() {
 		appendChatView(fmt.Sprintf("Nickname: %s", getChatName()))
 	}}
 
+	commands["/x"] = &command{"xxx", "", func(args []string) {
+		for i:=0;i<100;i++ {
+			appendView(usersViewName, fmt.Sprintf("xxx %d\n", i))
+		}
+	}}	
+
+	commands["/clear"] = &command{"Clears chat", "", func(args []string) {
+		clearView(chatViewName)
+	}}	
+
+	commands["/cl"] = &command{"Clears log", "", func(args []string) {
+		clearView(logViewName)
+	}}	
+
 	commands["/a"] = &command{"/start 9999", "", func(args []string) {
 		processCommand("/start", []string{"9999"})
 	}}

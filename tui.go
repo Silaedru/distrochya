@@ -34,11 +34,13 @@ func (e *chatInput) onEnter(v *gocui.View) {
 	v.SetCursor(0, 0)
 	v.SetOrigin(0, 0)
 
-	if len(input) > 1 && input[0] == '/' {
-		args := strings.Split(input, " ")
-		processCommand(args[0], args[1:])
-	} else {
-		chatMessage(input)
+	if len(input) > 0 { 
+		if input[0] == '/' {
+			args := strings.Split(input, " ")
+			processCommand(args[0], args[1:])
+		} else {
+			chatMessage(input)
+		}
 	}
 }
 
@@ -157,7 +159,8 @@ func updateStatus() {
 			for cn != nil {
 				cn.data.lock.Lock()
 				nID := cn.data.id
-				nodesStr = fmt.Sprintf("%s\n   -> 0x%X (listening on %s): %s", nodesStr, nID, idToEndpoint(nID), cn.data.r)
+				nodesStr = fmt.Sprintf("%s\n   -> 0x%X (listening on %s): %s", nodesStr,
+					nID, idToEndpoint(nID), cn.data.r)
 				cn.data.lock.Unlock()
 				cn = cn.next
 			}
@@ -167,8 +170,8 @@ func updateStatus() {
 		overwriteView(statusViewName, fmt.Sprintf(""+
 			"Logical time: %d\n"+
 			"Network state: %s\n"+
-			"nodeId:   0x%X (%s)\n"+
-			"leaderId: 0x%X (%s)\n"+
+			"Node ID:   0x%X (%s)\n"+
+			"Leader ID: 0x%X (%s)\n"+
 			"\n"+
 			"Connected nodes:\n%s\n\n   === END ===", readTime(),
 			 readNetworkState(), nodeId, idToEndpoint(nodeId), readLeaderId(),
@@ -261,7 +264,7 @@ func layout(g *gocui.Gui) error {
 		panic(err)
 	}
 
-	controlsView.Wrap = false
+	controlsView.Wrap = true
 	controlsView.Frame = false
 
 	g.SetCurrentView(chatInputViewName)
@@ -269,13 +272,21 @@ func layout(g *gocui.Gui) error {
 	return nil
 }
 
+func scrollView(vn string, dy int) {
+	if v, err := gui.View(vn); err == nil {
+		ox, oy := v.Origin()
+		v.SetOrigin(ox, oy+dy)	
+	}
+}
+
 func setupKeyBindings(g *gocui.Gui) {
 	g.SetKeybinding("", gocui.KeyPgup, gocui.ModNone, func(g *gocui.Gui, v *gocui.View) error {
-		clearView(chatViewName)
+		scrollView(usersViewName, -1)
 		return nil
 	})
 
 	g.SetKeybinding("", gocui.KeyPgdn, gocui.ModNone, func(g *gocui.Gui, v *gocui.View) error {
+		scrollView(usersViewName, 1)
 		return nil
 	})
 
@@ -285,13 +296,25 @@ func setupKeyBindings(g *gocui.Gui) {
 	})
 
 	g.SetKeybinding("", gocui.KeyF5, gocui.ModNone, func(g *gocui.Gui, v *gocui.View) error {
-		processCommand("/us", nil)
+		updateStatus()
 		return nil
 	})
 
 	g.SetKeybinding("", gocui.KeyF10, gocui.ModNone, func(g *gocui.Gui, v *gocui.View) error {
 		return gocui.ErrQuit
 	})
+
+	if debugEnabled {
+		g.SetKeybinding("", gocui.KeyF11, gocui.ModNone, func(g *gocui.Gui, v *gocui.View) error {
+			scrollView(statusViewName, -1)
+			return nil
+		})
+
+		g.SetKeybinding("", gocui.KeyF12, gocui.ModNone, func(g *gocui.Gui, v *gocui.View) error {
+			scrollView(statusViewName, 1)
+			return nil
+		})
+	}
 }
 
 func initializeTui() {
@@ -311,13 +334,22 @@ func initializeTui() {
 	gui.Mouse = false
 	gui.InputEsc = true
 
-	overwriteView(controlsViewName, "" +
-		"\x1b[30;46m PgUp/PgDn: Scroll users \x1b[0m " +
-		"\x1b[30;46m F1: Help \x1b[0m " +
-		"\x1b[30;46m F5: Refresh status \x1b[0m " +
-		"\x1b[30;46m F10: Quit \x1b[0m")
+	if debugEnabled {
+		overwriteView(controlsViewName, "" +
+			"\x1b[30;46m F1: Help \x1b[0m " +
+			"\x1b[30;46m F5: Refresh status \x1b[0m " +
+			"\x1b[30;46m F10: Quit \x1b[0m " +
+			"\x1b[30;46m F11/F12: Scroll status \x1b[0m " +
+			"\x1b[30;46m PgUp/PgDn: Scroll users \x1b[0m ")
+	} else {
+		overwriteView(controlsViewName, "" +
+			"\x1b[30;46m F1: Help \x1b[0m " +
+			"\x1b[30;46m F5: Refresh status \x1b[0m " +
+			"\x1b[30;46m F10: Quit \x1b[0m " +
+			"\x1b[30;46m PgUp/PgDn: Scroll users \x1b[0m ")
+	}
 	
-	userEvent(fmt.Sprintf("using default nickname: %s", getChatName()))
+	userEvent(fmt.Sprintf("using default nickname \"%s\"", getChatName()))
 
 	updateStatus()
 
