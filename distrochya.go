@@ -111,8 +111,12 @@ func initCommands() {
 		if len(args) > 0 {
 			var nick bytes.Buffer
 
-			for _, s := range(args) {
+			for i, s := range(args) {
 				nick.WriteString(s)
+
+				if i+1<len(args) {
+					nick.WriteString(" ")
+				}
 			}
 
 			nickStr := strings.Replace(nick.String(), ";", "", -1)
@@ -121,12 +125,6 @@ func initCommands() {
 
 		appendChatView(fmt.Sprintf("Nickname: %s", getChatName()))
 	}}
-
-	commands["/x"] = &command{"xxx", "", func(args []string) {
-		for i:=0;i<100;i++ {
-			appendView(usersViewName, fmt.Sprintf("xxx %d\n", i))
-		}
-	}}	
 
 	commands["/clear"] = &command{"Clears chat", "", func(args []string) {
 		clearView(chatViewName)

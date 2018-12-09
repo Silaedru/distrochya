@@ -213,7 +213,6 @@ func layout(g *gocui.Gui) error {
 
 		logView.Wrap = true
 		logView.Title = logViewTitle
-		logView.Autoscroll = true
 
 		statusView, err := g.SetView(statusViewName, logViewWidth+1, curY, maxW, logViewHeight)
 
@@ -236,7 +235,6 @@ func layout(g *gocui.Gui) error {
 	}
 
 	chatView.Wrap = true
-	chatView.Autoscroll = true
 	chatView.Title = chatViewTitle
 
 	usersView, err := g.SetView(usersViewName, chatViewWidth+1, curY, maxW, maxH-2)
@@ -273,10 +271,18 @@ func layout(g *gocui.Gui) error {
 }
 
 func scrollView(vn string, dy int) {
-	if v, err := gui.View(vn); err == nil {
-		ox, oy := v.Origin()
-		v.SetOrigin(ox, oy+dy)	
-	}
+	// thanks to https://github.com/jroimartin/gocui/issues/84
+    v, _ := gui.View(vn)
+    
+    _, y := v.Size()
+    ox, oy := v.Origin()
+
+    if oy+dy > strings.Count(v.ViewBuffer(), "\n")-y-1 {
+        v.Autoscroll = true
+    } else {
+        v.Autoscroll = false
+        v.SetOrigin(ox, oy+dy)
+    }
 }
 
 func setupKeyBindings(g *gocui.Gui) {
@@ -287,6 +293,16 @@ func setupKeyBindings(g *gocui.Gui) {
 
 	g.SetKeybinding("", gocui.KeyPgdn, gocui.ModNone, func(g *gocui.Gui, v *gocui.View) error {
 		scrollView(usersViewName, 1)
+		return nil
+	})
+
+	g.SetKeybinding("", gocui.KeyF6, gocui.ModNone, func(g *gocui.Gui, v *gocui.View) error {
+		scrollView(chatViewName, -1)
+		return nil
+	})
+
+	g.SetKeybinding("", gocui.KeyF7, gocui.ModNone, func(g *gocui.Gui, v *gocui.View) error {
+		scrollView(chatViewName, 1)
 		return nil
 	})
 
@@ -314,6 +330,16 @@ func setupKeyBindings(g *gocui.Gui) {
 			scrollView(statusViewName, 1)
 			return nil
 		})
+
+		g.SetKeybinding("", gocui.KeyF8, gocui.ModNone, func(g *gocui.Gui, v *gocui.View) error {
+			scrollView(logViewName, -1)
+			return nil
+		})
+
+		g.SetKeybinding("", gocui.KeyF9, gocui.ModNone, func(g *gocui.Gui, v *gocui.View) error {
+			scrollView(logViewName, 1)
+			return nil
+		})
 	}
 }
 
@@ -338,6 +364,8 @@ func initializeTui() {
 		overwriteView(controlsViewName, "" +
 			"\x1b[30;46m F1: Help \x1b[0m " +
 			"\x1b[30;46m F5: Refresh status \x1b[0m " +
+			"\x1b[30;46m F6/F7: Scroll chat \x1b[0m " +
+			"\x1b[30;46m F8/F9: Scroll log \x1b[0m " +
 			"\x1b[30;46m F10: Quit \x1b[0m " +
 			"\x1b[30;46m F11/F12: Scroll status \x1b[0m " +
 			"\x1b[30;46m PgUp/PgDn: Scroll users \x1b[0m ")
@@ -345,10 +373,18 @@ func initializeTui() {
 		overwriteView(controlsViewName, "" +
 			"\x1b[30;46m F1: Help \x1b[0m " +
 			"\x1b[30;46m F5: Refresh status \x1b[0m " +
+			"\x1b[30;46m F6/F7: Scroll chat \x1b[0m " +
 			"\x1b[30;46m F10: Quit \x1b[0m " +
 			"\x1b[30;46m PgUp/PgDn: Scroll users \x1b[0m ")
 	}
-	
+
+	// hack to enable initial autoscroll on log and chat 
+	gui.Update(func(g *gocui.Gui) error {
+		scrollView(logViewName, 1)
+		scrollView(chatViewName, 1)
+		return nil
+	})
+
 	userEvent(fmt.Sprintf("using default nickname \"%s\"", getChatName()))
 
 	updateStatus()
