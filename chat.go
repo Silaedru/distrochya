@@ -46,6 +46,15 @@ func startElectionTimer(timeout uint8) {
 			nextNode := findNodeByRelation(next)
 			if nextNode == nil {
 				log("Absence of leader detected without having next node")
+
+				prevNode := findNodeByRelation(prev)
+
+				if prevNode == nil {
+					log("Absence of leader detected without having next or prev node, falling back to singleNode")	
+					updateNetworkState(singleNode)
+				} else {
+					log("Absence of leader detected without having next node: Awaiting ring repair")
+				}
 			} else {
 				log(fmt.Sprintf("Absence of leader detected: sending election, target_id=0x%X, candidate_id=0x%X", nextNode.id, nodeId))
 				nextNode.sendMessage(election, idToString(nodeId))
@@ -110,6 +119,11 @@ func resetElectionStartTriggerFlag() {
 
 func setChatParticipation() {
 	atomic.StoreUint32(&chatParticipation, 1)
+
+	if isNetworkRunning() {
+		connectToLeader()
+		appendChatView(fmt.Sprintf("\x1b[33mYou have joined the chat\x1b[0m"))
+	}
 }
 
 func getChatParticipation() uint32 {
@@ -118,6 +132,12 @@ func getChatParticipation() uint32 {
 
 func resetChatParticipation() {
 	atomic.StoreUint32(&chatParticipation, 0)
+
+	if isNetworkRunning() {
+		disconnectFromLeader()
+		updateUsers(nil)
+		appendChatView(fmt.Sprintf("\x1b[33mYou have left the chat\x1b[0m"))
+	}
 }
 
 func stopElectionTimer() {
@@ -129,6 +149,7 @@ func stopElectionTimer() {
 	}
 
 	leaderElectionTimer = nil
+	log("Election timer stopped")
 }
 
 func resetElectionTimer() {
@@ -156,11 +177,7 @@ func connectToLeader() {
 		return
 	}
 
-	existingLeader := findNodeByRelation(leader)
-
-	if existingLeader != nil {
-		existingLeader.disconnect()
-	}
+	disconnectFromLeader()
 
 	newLeaderId := readLeaderId()
 	newLeader := connectToClient(idToEndpoint(newLeaderId))
@@ -176,6 +193,32 @@ func connectToLeader() {
 	newLeader.r = leader
 	newLeader.lock.Unlock()
 	newLeader.sendMessage(connect, idToString(nodeId), string(follower), getChatName())
+
+	setConnectedName(getChatName())
+
+	mq := clearMessageQueue()
+
+	if mq != nil {
+		log("Enqueued chat messages found, dequeueing")
+
+		for _, m := range(mq) {
+			chatMessage(m)
+		}
+	}
+}
+
+func disconnectFromLeader() {
+	resetConnectedName()
+	
+	existingLeader := findNodeByRelation(leader)
+
+	if existingLeader != nil {
+		existingLeader.lock.Lock()
+		existingLeader.r = none
+		existingLeader.lock.Unlock()
+
+		existingLeader.disconnect()
+	}
 }
 
 func handleNewLeader(id uint64) {
@@ -192,16 +235,22 @@ func handleNewLeader(id uint64) {
 }
 
 func chatMessage(m string) {
-	if getChatParticipation() > 0 {
-		leader := findNodeByRelation(leader)
+	if isNetworkRunning() {
+		if getChatParticipation() > 0 {
+			leader := findNodeByRelation(leader)
 
-		if leader != nil {
-			log(fmt.Sprintf("Sending chatmessagesend, target_id=0x%X", leader.id))
-			leader.sendMessage(chatmessagesend, m)
+			if leader != nil {
+				log(fmt.Sprintf("Sending chatmessagesend, target_id=0x%X", leader.id))
+				leader.sendMessage(chatmessagesend, m)
+			} else {
+				//userError("no leader")
+				log("No leader, enqueueing chat message")
+				enqueueMessage(m)
+			}
 		} else {
-			userError("no leader")
+			userError("you are not participating in a chat")
 		}
 	} else {
-		userError("no chat participation")
+		userError("you are not connected to a network")
 	}
 }

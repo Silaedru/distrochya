@@ -189,6 +189,22 @@ func appendLogView(s string) {
 	appendView(logViewName, s+"\n")
 }
 
+func setConnectedName(n string) {
+	gui.Update(func(g *gocui.Gui) error {
+		v, _ := gui.View(chatInputViewName)
+		if len(n) == 0 {
+			v.Title = ""
+		} else {
+			v.Title = fmt.Sprintf(" Chatting as: %s ", n)
+		}
+		return nil
+	})
+}
+
+func resetConnectedName() {
+	setConnectedName("")
+}
+
 func appendChatView(s string) {
 	appendView(chatViewName, s+"\n")
 }
@@ -380,7 +396,9 @@ func initializeTui() {
 
 	// hack to enable initial autoscroll on log and chat 
 	gui.Update(func(g *gocui.Gui) error {
-		scrollView(logViewName, 1)
+		if debugEnabled {
+			scrollView(logViewName, 1)
+		}
 		scrollView(chatViewName, 1)
 		return nil
 	})

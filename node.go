@@ -131,7 +131,7 @@ func (n *Node) handleConnect(params []string) {
 func (n *Node) handleClient() {
 	addNode(n)
 
-	log("New connection")
+	log(fmt.Sprintf("New connection (%s -> %s)", n.connection.LocalAddr().String(), n.connection.RemoteAddr().String()))
 
 	r := bufio.NewReader(n.connection)
 

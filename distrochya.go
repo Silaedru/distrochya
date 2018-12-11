@@ -57,17 +57,18 @@ func chatMessageReceived(u string, s string) {
 func initCommands() {
 	commands = make(map[string]*command)
 
-	commands["/help"] = &command{"Prints this message.", "", func(args []string) {
+	commands["/help"] = &command{"Prints this message.", "                       ", func(args []string) {
 		msg := "\nAvailable commands:"
 
 		for n, c := range commands {
-			msg = fmt.Sprintf("%s\n%s %s             %s", msg, n, c.usage, c.helpString)
+			msg = fmt.Sprintf("%s\n%s %s          %s", msg, n, c.usage, c.helpString)
 		}
 
 		appendChatView(msg + "\n")
 	}}
 
-	commands["/start"] = &command{"Starts a new network. Node will listen for incoming connections on specified <port>.", "<port>", func(args []string) {
+	commands["/start"] = &command{"Starts a new network. Node will listen for incoming connections on specified <port>.",
+	 "<port>                ", func(args []string) {
 		if args == nil || len(args) != 1 {
 			userError("invalid usage")
 			return
@@ -83,7 +84,7 @@ func initCommands() {
 		startNetwork(uint16(port))
 	}}
 
-	commands["/disconnect"] = &command{"Disconnects from a network.", "", func(args []string) {
+	commands["/disconnect"] = &command{"Disconnects from a network.", "                 ", func(args []string) {
 		disconnect()
 	}}
 
@@ -102,12 +103,8 @@ func initCommands() {
 
 		joinNetwork(args[0], uint16(port))
 	}}
-
-	commands["/us"] = &command{"Update status", "", func(args []string) {
-		updateStatus()
-	}}
-
-	commands["/nick"] = &command{"Sets a new nickname", "[new nickname]", func(args []string) {
+    
+	commands["/nick"] = &command{"Sets a new nickname", "[new nickname]         ", func(args []string) {
 		if len(args) > 0 {
 			var nick bytes.Buffer
 
@@ -123,37 +120,57 @@ func initCommands() {
 			setChatName(nickStr)
 		}
 
-		appendChatView(fmt.Sprintf("Nickname: %s", getChatName()))
+		appendChatView(fmt.Sprintf("\x1b[35mNickname: %s\x1b[0m", getChatName()))
 	}}
 
-	commands["/clear"] = &command{"Clears chat", "", func(args []string) {
+	commands["/clear"] = &command{"Clears chat", "                      ", func(args []string) {
 		clearView(chatViewName)
 	}}	
+	
+	commands["/setpart"] = &command{"Sets chat participation", "[new value]         ", func(args []string) {
+		if len(args) > 0 {
+			if value, err := strconv.Atoi(args[0]); err == nil {
+				if value > 0 {
+					setChatParticipation()
+				} else {
+					resetChatParticipation()
+				}
+			}
+		}
 
-	commands["/cl"] = &command{"Clears log", "", func(args []string) {
-		clearView(logViewName)
+		appendChatView(fmt.Sprintf("\x1b[35mChat participation: %d\x1b[0m", getChatParticipation()))
 	}}	
 
-	commands["/a"] = &command{"/start 9999", "", func(args []string) {
-		processCommand("/start", []string{"9999"})
-	}}
-	commands["/b"] = &command{"/connect localhost:9999 9998", "", func(args []string) {
-		processCommand("/connect", []string{"localhost:9999", "9998"})
-	}}
-	commands["/c"] = &command{"/connect localhost:9999 9997", "", func(args []string) {
-		processCommand("/connect", []string{"localhost:9999", "9997"})
-	}}
-	commands["/d"] = &command{"/connect localhost:9999 9996", "", func(args []string) {
-		processCommand("/connect", []string{"localhost:9999", "9996"})
-	}}
-	commands["/e"] = &command{"/connect localhost:9999 9995", "", func(args []string) {
-		processCommand("/connect", []string{"localhost:9999", "9995"})
-	}}
+	if debugEnabled {
+		commands["/us"] = &command{"Update status", "                         ", func(args []string) {
+			updateStatus()
+		}}
 
-	commands["/m"] = &command{"mark", "", func(args []string) {
-		appendChatView("========= MARK ==========")
-		appendLogView("========= MARK ==========")
-	}}
+		commands["/cl"] = &command{"Clears log", "                         ", func(args []string) {
+			clearView(logViewName)
+		}}	
+
+		commands["/a"] = &command{"/start 9999", "                          ", func(args []string) {
+			processCommand("/start", []string{"9999"})
+		}}
+		commands["/b"] = &command{"/connect localhost:9999 9998", "                          ", func(args []string) {
+			processCommand("/connect", []string{"localhost:9999", "9998"})
+		}}
+		commands["/c"] = &command{"/connect localhost:9999 9997", "                          ", func(args []string) {
+			processCommand("/connect", []string{"localhost:9999", "9997"})
+		}}
+		commands["/d"] = &command{"/connect localhost:9999 9996", "                          ", func(args []string) {
+			processCommand("/connect", []string{"localhost:9999", "9996"})
+		}}
+		commands["/e"] = &command{"/connect localhost:9999 9995", "                          ", func(args []string) {
+			processCommand("/connect", []string{"localhost:9999", "9995"})
+		}}
+
+		commands["/m"] = &command{"mark", "                          ", func(args []string) {
+			appendChatView("========= MARK ==========")
+			appendLogView("========= MARK ==========")
+		}}
+	}
 }
 
 func main() {

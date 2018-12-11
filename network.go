@@ -88,6 +88,7 @@ func resetNode() {
 	updateLeaderId(0)
 	resetChatConnections()
 	updateUsers(nil)
+	resetConnectedName()
 
 	connectedNodes := nodes.toSlice()
 	
