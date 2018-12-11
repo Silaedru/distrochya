@@ -170,11 +170,13 @@ func updateStatus() {
 		overwriteView(statusViewName, fmt.Sprintf(""+
 			"  Logical time: \x1b[33;1m%d\x1b[0m\n"+
 			" Network state: \x1b[33;1m%s\x1b[0m\n"+
-			"   Node ID: \x1b[33;1m0x%X\x1b[0m (%s)\n"+
-			" Leader ID: \x1b[33;1m0x%X\x1b[0m (%s)\n"+
+			"            Node ID: \x1b[33;1m0x%X\x1b[0m (%s)\n"+
+			" Twice Next Node ID: \x1b[33;1m0x%X\x1b[0m (%s)\n"+
+			"          Leader ID: \x1b[33;1m0x%X\x1b[0m (%s)\n"+
 			"\n"+
 			" Connected nodes:\n%s\n\n   ----- END -----", readTime(),
-			 readNetworkState(), nodeId, idToEndpoint(nodeId), readLeaderId(),
+			 readNetworkState(), nodeId, idToEndpoint(nodeId), getTwiceNextNodeId(),
+			  idToEndpoint(getTwiceNextNodeId()), readLeaderId(), 
 			  idToEndpoint(readLeaderId()), nodesStr))
 
 		networkGlobalsMutex.Unlock()

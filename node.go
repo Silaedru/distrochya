@@ -26,10 +26,10 @@ func (n *Node) disconnect() {
 }
 
 func (n *Node) sendMessage(m ...string) {
-	msg := fmt.Sprintf("%s;%d", magic, advanceTime())
+	msg := fmt.Sprintf("%s%s%d", magic, sepchar, advanceTime())
 
 	for _, s := range m {
-		msg += ";" + s
+		msg += sepchar + s
 	}
 
 	debugLog("SEND: ==" + msg + "== (" + idToString(n.id) + ")")
@@ -92,19 +92,21 @@ func (n *Node) handleConnect(params []string) {
 		
 		if oldNext == nil {
 			log(fmt.Sprintf("New connection with r=none (id=0x%X), sending netinfo my_id=0x%X, next_id=0x%X (no existing nextnode found), leader_id=0x%X", n.id, nodeId, nodeId, readLeaderId()))
-			n.sendMessage(netinfo, idToString(nodeId), idToString(nodeId), idToString(readLeaderId()))
+			n.sendMessage(netinfo, idToString(nodeId), idToString(nodeId), idToString(readLeaderId()), idToString(n.id))
 			updateNetworkState(ring)
+			updateTwiceNextNodeId(nodeId)
 		} else {
 			log(fmt.Sprintf("New next connection while in ring, closing oldNext; old_next_id=0x%X, new_next_id=0x%X", oldNext.id, n.id))
+			oldTwiceNextNodeId := getTwiceNextNodeId()
 			oldNext.lock.Lock()
 			oldNext.r = none
+			updateTwiceNextNodeId(oldNext.id)
 			oldNext.lock.Unlock()
 			oldNext.disconnect()
 
 			log(fmt.Sprintf("New connection with r=none (id=0x%X), sending netinfo my_id=0x%X, next_id=0x%X, leader_id=0x%X", n.id, nodeId, oldNext.id, readLeaderId()))
-			n.sendMessage(netinfo, idToString(nodeId), idToString(oldNext.id), idToString(readLeaderId()))
+			n.sendMessage(netinfo, idToString(nodeId), idToString(oldNext.id), idToString(readLeaderId()), idToString(oldTwiceNextNodeId))
 		}
-
 	} else if n.r == prev {
 	} else if n.r == next {
 		atomic.StoreUint32(&ringBroken, 0)
@@ -122,9 +124,20 @@ func (n *Node) handleConnect(params []string) {
 
 		msg := []string{userlist}
 		msg = append(msg, getConnectedNames()[:]...)
+		n.lock.Unlock()
 		broadcastToFollowers(msg[:]...)
+		n.lock.Lock()
 	} else {
 		panic("invalid connection request")
+	}
+
+
+	if n.r == next {
+		prevNode := findNodeByRelation(prev)
+
+		if prevNode != nil {
+			prevNode.sendMessage(nextinfo, idToString(n.id))
+		}
 	}
 }
 
@@ -214,9 +227,17 @@ func (n *Node) processMessage(m string) bool {
 				return false
 			}
 
+			remoteTwiceNextNodeId, err := stringToId(msg[parseStartIx+3])
+			if err != nil {
+				debugLog("NETINFO remoteTwiceNextNodeId err")
+				return false
+			}
+
 			n.lock.Lock()
 			n.id = remoteNodeId
 			n.lock.Unlock()
+
+			updateTwiceNextNodeId(remoteTwiceNextNodeId)
 
 			log(fmt.Sprintf("[%d] Received netinfo: remote_id=0x%X, next_id=0x%X, leader_id=0x%X", messageTime, remoteNodeId, nextId, remoteLeaderId))
 
@@ -374,6 +395,16 @@ func (n *Node) processMessage(m string) bool {
 			log(fmt.Sprintf("[%d] Received userlist from_id=0x%X", messageTime, n.id))
 			users := msg[parseStartIx:]
 			updateUsers(users)
+
+		case nextinfo:
+			newTwiceNextNodeId, err := stringToId(msg[parseStartIx])
+
+			if err != nil {
+				debugLog("NEXTINFO new twice next node id failure")
+				return false
+			}
+			log(fmt.Sprintf("[%d] Received nextinfo from_id=0x%X, twice_next_node_id=0x%X", messageTime, n.id, newTwiceNextNodeId))
+			updateTwiceNextNodeId(newTwiceNextNodeId)
 		}
 
 	}

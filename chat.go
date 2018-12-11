@@ -195,16 +195,6 @@ func connectToLeader() {
 	newLeader.sendMessage(connect, idToString(nodeId), string(follower), getChatName())
 
 	setConnectedName(getChatName())
-
-	mq := clearMessageQueue()
-
-	if mq != nil {
-		log("Enqueued chat messages found, dequeueing")
-
-		for _, m := range(mq) {
-			chatMessage(m)
-		}
-	}
 }
 
 func disconnectFromLeader() {
@@ -243,14 +233,12 @@ func chatMessage(m string) {
 				log(fmt.Sprintf("Sending chatmessagesend, target_id=0x%X", leader.id))
 				leader.sendMessage(chatmessagesend, m)
 			} else {
-				//userError("no leader")
-				log("No leader, enqueueing chat message")
-				enqueueMessage(m)
+				userError("cannot send your message because there is no leader on the network, please wait a few moments and then try again")
 			}
 		} else {
-			userError("you are not participating in a chat")
+			userError("you are not participating in the chat")
 		}
 	} else {
-		userError("you are not connected to a network")
+		userError("you are not connected to any network")
 	}
 }

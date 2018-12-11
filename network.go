@@ -34,6 +34,7 @@ const (
 	userlist  = "userlist"  // params=[users]
 	chatmessage = "chatmessage" // params=user;message
 	chatmessagesend = "chmsgsend" // params=message
+	nextinfo = "nextinfo"
 
 	// network states
 	noNetwork  = "No Network"
@@ -52,8 +53,9 @@ var networkGlobalsMutex *sync.Mutex = &sync.Mutex{}
 var networkStateMutex *sync.Mutex = &sync.Mutex{}
 
 var server net.Listener
-var networkState string
+var networkState string = noNetwork
 var nodeId uint64
+var twiceNextNodeId uint64
 var nodes *nodeSyncLinkedList
 
 var ringBroken uint32 = 0 // atomic, not guarded by mutex
@@ -79,12 +81,21 @@ func readNetworkState() string {
 	return rtn
 }
 
+func updateTwiceNextNodeId(id uint64) {
+	atomic.StoreUint64(&twiceNextNodeId, id)
+}
+
+func getTwiceNextNodeId() uint64 {
+	return atomic.LoadUint64(&twiceNextNodeId)
+}
+
 func resetNode() {
 	networkGlobalsMutex.Lock()
 	defer networkGlobalsMutex.Unlock()
 
 	server = nil
 	nodeId = 0
+	updateTwiceNextNodeId(0)
 	updateLeaderId(0)
 	resetChatConnections()
 	updateUsers(nil)
@@ -108,6 +119,7 @@ func initNode(ip uint32, p uint16) {
 	updateUsers(nil)
 	
 	nodeId = createNodeId(ip, p, uint16(rand.Uint32()))
+	updateTwiceNextNodeId(0)
 	nodes = newNodeSyncLinkedList()
 }
 
@@ -163,9 +175,11 @@ func broadcastToFollowers(m ...string) {
 		cn := nodes.head 
 
 		for cn != nil {
+			cn.data.lock.Lock()
 			if cn.data.r == follower {
 				cn.data.sendMessage(m...)
 			}
+			cn.data.lock.Unlock()
 
 			cn = cn.next
 		}
