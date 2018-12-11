@@ -91,7 +91,7 @@ func (n *Node) handleConnect(params []string) {
 		oldNext := findNodeByRelationExcludingId(next, n.id)
 		
 		if oldNext == nil {
-			log(fmt.Sprintf("New connection with r=none (id=0x%X), sending netinfo my_id=0x%X, next_id=0x%X (no existing nextnode found), leader_id=0x%X", n.id, nodeId, nodeId, readLeaderId()))
+			log(fmt.Sprintf("New connection with r=none (id=0x%X), sending netinfo my_id=0x%X, next_id=0x%X (no existing nextnode found), leader_id=0x%X, twice_next_node_id=0x%X", n.id, nodeId, nodeId, readLeaderId(), n.id))
 			n.sendMessage(netinfo, idToString(nodeId), idToString(nodeId), idToString(readLeaderId()), idToString(n.id))
 			updateNetworkState(ring)
 			updateTwiceNextNodeId(nodeId)
@@ -104,14 +104,28 @@ func (n *Node) handleConnect(params []string) {
 			oldNext.lock.Unlock()
 			oldNext.disconnect()
 
-			log(fmt.Sprintf("New connection with r=none (id=0x%X), sending netinfo my_id=0x%X, next_id=0x%X, leader_id=0x%X", n.id, nodeId, oldNext.id, readLeaderId()))
+			log(fmt.Sprintf("New connection with r=none (id=0x%X), sending netinfo my_id=0x%X, next_id=0x%X, leader_id=0x%X, twice_next_node_id=0x%X", n.id, nodeId, oldNext.id, readLeaderId(), oldTwiceNextNodeId))
 			n.sendMessage(netinfo, idToString(nodeId), idToString(oldNext.id), idToString(readLeaderId()), idToString(oldTwiceNextNodeId))
+		}
+
+		prevNode := findNodeByRelation(prev)
+
+		if prevNode != nil {
+			log(fmt.Sprintf("New next connection, sending nextinfo to my prev, target_id=0x%X, next_id=0x%X", prevNode.id, n.id))
+			prevNode.sendMessage(nextinfo, idToString(n.id))
 		}
 	} else if n.r == prev {
 	} else if n.r == next {
 		atomic.StoreUint32(&ringBroken, 0)
 
 		log("Ring repaired (side missing next)")
+
+		nextNode := findNodeByRelation(next)
+		if nextNode == nil {
+			panic("ring repaired (side missing next) without having nextNode")
+		}
+		log(fmt.Sprintf("Ring repaired (new next), sending nextinfo to my prev, target_id=0x%X, next_id=0x%X", n.id, nextNode.id))
+		n.sendMessage(nextinfo, idToString(nextNode.id))
 
 		if isElectionStartTriggerFlagSet() {
 			log("Detected set election start trigger - starting leader election")
@@ -132,13 +146,14 @@ func (n *Node) handleConnect(params []string) {
 	}
 
 
-	if n.r == next {
+	/*if n.r == next {
 		prevNode := findNodeByRelation(prev)
 
 		if prevNode != nil {
+			log(fmt.Sprintf("New next connection, sending nextinfo to my prev, target_id=0x%X, next_id=0x%X", prevNode.id, n.id))
 			prevNode.sendMessage(nextinfo, idToString(n.id))
 		}
-	}
+	}*/
 }
 
 func (n *Node) handleClient() {
@@ -239,7 +254,7 @@ func (n *Node) processMessage(m string) bool {
 
 			updateTwiceNextNodeId(remoteTwiceNextNodeId)
 
-			log(fmt.Sprintf("[%d] Received netinfo: remote_id=0x%X, next_id=0x%X, leader_id=0x%X", messageTime, remoteNodeId, nextId, remoteLeaderId))
+			log(fmt.Sprintf("[%d] Received netinfo: remote_id=0x%X, next_id=0x%X, leader_id=0x%X, twice_next_node_id=0x%X", messageTime, remoteNodeId, nextId, remoteLeaderId, remoteTwiceNextNodeId))
 
 			log(fmt.Sprintf("Attempting to connect to remote node, id=0x%X", remoteNodeId))
 			nextNode := connectToClient(idToEndpoint(nextId))
@@ -288,7 +303,12 @@ func (n *Node) processMessage(m string) bool {
 			} else {
 				log(fmt.Sprintf("[%d] Received closering without having a prevNode! from_id=0x%X, sender_id=0x%X", messageTime, n.id, senderId))
 				log(fmt.Sprintf("Sending connect message: target_id=0x%X, my_id=0x%X, r=%s", senderId, nodeId, next))
-				prevNode = connectToClient(idToEndpoint(senderId))
+				
+				if n.r == none {
+					prevNode = n
+				} else {
+					prevNode = connectToClient(idToEndpoint(senderId))
+				}
 
 				if prevNode == nil {
 					log(fmt.Sprintf("Connection to remote node failed!, id=0x%X", senderId))
@@ -301,6 +321,13 @@ func (n *Node) processMessage(m string) bool {
 				prevNode.lock.Unlock()
 				prevNode.sendMessage(connect, idToString(nodeId), string(next))
 				log("Ring repaired (side missing prev)")
+
+				nextNode := findNodeByRelation(next)
+				if nextNode == nil {
+					panic("ring repaired (side missing prev) without having nextNode")
+				}
+				log(fmt.Sprintf("Ring repaired, sending nextinfo to my new prev, target_id=0x%X, next_id=0x%X", prevNode.id, nextNode.id))
+				prevNode.sendMessage(nextinfo, idToString(nextNode.id))
 			}
 
 		case election:

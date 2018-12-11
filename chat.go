@@ -146,10 +146,10 @@ func stopElectionTimer() {
 
 	if leaderElectionTimer != nil {
 		leaderElectionTimer.Stop()
+		log("Election timer stopped")
 	}
 
 	leaderElectionTimer = nil
-	log("Election timer stopped")
 }
 
 func resetElectionTimer() {

@@ -69,6 +69,7 @@ func updateNetworkState(s string) {
 	if s == singleNode {
 		log("NETWORK STATE CHANGED TO SINGLE NODE, ASSUMING LEADER ROLE")
 		handleNewLeader(nodeId)
+		updateTwiceNextNodeId(0)
 	}
 }
 
@@ -207,18 +208,43 @@ func closeRing(oldNextNodeId uint64) {
 			updateNetworkState(singleNode)
 		} else {
 			atomic.StoreUint32(&ringBroken, 1)
+			prevNode.lock.Unlock()
+
+			twiceNextNodeId := getTwiceNextNodeId()
+			twiceNextNode := connectToClient(idToEndpoint(twiceNextNodeId))
+			
+			if twiceNextNode != nil {
+				twiceNextNode.lock.Lock()
+				twiceNextNode.id = twiceNextNodeId
+				//twiceNextNode.r = next
+				//twiceNextNode.lock.Unlock()
+			} else {
+				log("Connection to twice next node failed")
+				prevNode.lock.Lock()
+			}
 
 			go func() {
-				for atomic.LoadUint32(&ringBroken) == 1 && prevNode.connected {
+				if twiceNextNode == nil {
+					for atomic.LoadUint32(&ringBroken) == 1 && prevNode.connected {
+						prevNode.lock.Unlock()
+						log("Broken ring detected with failure to connect to twiceNextNode")
+						log(fmt.Sprintf("Sending closering: target_id=0x%X, sender_id=0x%X", prevNode.id, nodeId))
+						prevNode.sendMessage(closering, idToString(nodeId))
+						time.Sleep(ringRepairTimeoutSeconds * time.Second)
+						prevNode.lock.Lock()
+					}
 					prevNode.lock.Unlock()
-					log("Broken ring detected")
-					log(fmt.Sprintf("Sending closering: target_id=0x%X, sender_id=0x%X", prevNode.id, nodeId))
-					prevNode.sendMessage(closering, idToString(nodeId))
-					time.Sleep(ringRepairTimeoutSeconds * time.Second)
-					prevNode.lock.Lock()
+				} else {
+					for atomic.LoadUint32(&ringBroken) == 1 && twiceNextNode.connected {
+						twiceNextNode.lock.Unlock()
+						log("Broken ring detected with successful connection to twiceNextNode")
+						log(fmt.Sprintf("Sending closering: target_id=0x%X, sender_id=0x%X", twiceNextNodeId, nodeId))
+						twiceNextNode.sendMessage(closering, idToString(nodeId))
+						time.Sleep(ringRepairTimeoutSeconds * time.Second)
+						twiceNextNode.lock.Lock()
+					}
+					twiceNextNode.lock.Unlock()
 				}
-
-				prevNode.lock.Unlock()
 			}()
 		}
 	}
