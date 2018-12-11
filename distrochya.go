@@ -23,7 +23,7 @@ func processCommand(name string, args []string) {
 	command := commands[name]
 
 	if command == nil {
-		userError("unknown command " + name)
+		userError(fmt.Sprintf("unknown command \"%s\"", name))
 		return
 	}
 
@@ -39,19 +39,19 @@ func debugLog(m string) {
 }
 
 func log(m string) {
-	appendLogView(fmt.Sprintf("(%8d)  %s", advanceTime(), m))
+	appendLogView(fmt.Sprintf("\x1b[37;1m(%8d)\x1b[0m  %s", advanceTime(), m))
 }
 
 func userError(e string) {
-	appendChatView(fmt.Sprintf("Error: %s", e))
+	appendChatView(fmt.Sprintf("<\x1b[31mError\x1b[0m>: %s", e))
 }
 
 func userEvent(m string) {
-	appendChatView(fmt.Sprintf("Info: %s", m))
+	appendChatView(fmt.Sprintf("<\x1b[35mInfo\x1b[0m>: %s", m))
 }
 
 func chatMessageReceived(u string, s string) {
-	appendChatView(fmt.Sprintf("<%s>: %s", u, s))
+	appendChatView(fmt.Sprintf("<\x1b[32m%s\x1b[0m>: %s", u, s))
 }
 
 func initCommands() {

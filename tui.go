@@ -159,7 +159,7 @@ func updateStatus() {
 			for cn != nil {
 				cn.data.lock.Lock()
 				nID := cn.data.id
-				nodesStr = fmt.Sprintf("%s\n   -> 0x%X (listening on %s): %s", nodesStr,
+				nodesStr = fmt.Sprintf("%s\n    -> \x1b[32m0x%X\x1b[0m (listening on %s): \x1b[33m%s\x1b[0m", nodesStr,
 					nID, idToEndpoint(nID), cn.data.r)
 				cn.data.lock.Unlock()
 				cn = cn.next
@@ -168,12 +168,12 @@ func updateStatus() {
 		}
 
 		overwriteView(statusViewName, fmt.Sprintf(""+
-			"Logical time: %d\n"+
-			"Network state: %s\n"+
-			"Node ID:   0x%X (%s)\n"+
-			"Leader ID: 0x%X (%s)\n"+
+			"  Logical time: \x1b[33;1m%d\x1b[0m\n"+
+			" Network state: \x1b[33;1m%s\x1b[0m\n"+
+			"   Node ID: \x1b[33;1m0x%X\x1b[0m (%s)\n"+
+			" Leader ID: \x1b[33;1m0x%X\x1b[0m (%s)\n"+
 			"\n"+
-			"Connected nodes:\n%s\n\n   === END ===", readTime(),
+			" Connected nodes:\n%s\n\n   ----- END -----", readTime(),
 			 readNetworkState(), nodeId, idToEndpoint(nodeId), readLeaderId(),
 			  idToEndpoint(readLeaderId()), nodesStr))
 
