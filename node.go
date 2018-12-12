@@ -120,12 +120,12 @@ func (n *Node) handleConnect(params []string) {
 
 		log("Ring repaired (side missing next)")
 
-		nextNode := findNodeByRelation(next)
-		if nextNode == nil {
-			panic("ring repaired (side missing next) without having nextNode")
+		prevNode := findNodeByRelation(prev)
+		if prevNode == nil {
+			panic("ring repaired (side missing next) without having prevNode")
 		}
-		log(fmt.Sprintf("Ring repaired (new next), sending nextinfo to my prev, target_id=0x%X, next_id=0x%X", n.id, nextNode.id))
-		n.sendMessage(nextinfo, idToString(nextNode.id))
+		log(fmt.Sprintf("Ring repaired (new next), sending nextinfo to my prev, target_id=0x%X, next_id=0x%X", prevNode.id, n.id))
+		prevNode.sendMessage(nextinfo, idToString(n.id))
 
 		if isElectionStartTriggerFlagSet() {
 			log("Detected set election start trigger - starting leader election")
