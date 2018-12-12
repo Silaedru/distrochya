@@ -338,6 +338,11 @@ func (n *Node) processMessage(m string) bool {
 				return false
 			}
 
+			if readLeaderId() != 0 {
+				log("New election detected, removing currently elected leader")
+				updateLeaderId(0)
+			}
+
 			log(fmt.Sprintf("[%d] Received election, from_id=0x%X, candidate_id=0x%X", messageTime, n.id, candidateId))
 
 			nextNode := findNodeByRelation(next)
