@@ -49,7 +49,8 @@ const (
 	leaderElectionTimeoutSeconds = 5
 	leaderElectionMinimumWait = 3
 	leaderElectionMaximumWait = 15
-	connectionTimeoutSeconds = 20
+	connectionTimeoutSeconds = 30
+	connectionTimeoutGraceSeconds = 5
 )
 
 var networkGlobalsMutex *sync.Mutex = &sync.Mutex{}

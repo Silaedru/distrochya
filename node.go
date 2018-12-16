@@ -168,7 +168,7 @@ func (n *Node) handleClient() {
 		updateStatus()
 
 		n.resetKeepAliveTimer()
-		n.connection.SetReadDeadline(time.Now().Add(connectionTimeoutSeconds * time.Second))
+		n.connection.SetReadDeadline(time.Now().Add((connectionTimeoutSeconds + connectionTimeoutGraceSeconds) * time.Second))
 		data, err := r.ReadString('\n')
 		n.connection.SetReadDeadline(zeroTime)
 		n.katLock.Lock()
@@ -221,7 +221,7 @@ func (n *Node) resetKeepAliveTimer() {
 	}
 
 	if n.connected {
-		n.kat = time.AfterFunc(connectionTimeoutSeconds / 2 * time.Second, n.keepAlive)
+		n.kat = time.AfterFunc(connectionTimeoutSeconds / 3 * time.Second, n.keepAlive)
 	}
 }
 
