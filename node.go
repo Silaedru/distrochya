@@ -18,6 +18,8 @@ type Node struct {
 	connection net.Conn
 	connected  bool
 	lock	   *sync.Mutex
+	kat *time.Timer
+	katLock *sync.Mutex
 }
 
 func (n *Node) disconnect() {
@@ -51,6 +53,11 @@ func (n *Node) handleDisconnect() {
 	n.connected = false
 	id := n.id
 	r := n.r
+
+	if n.kat != nil {
+		n.kat.Stop()
+	}
+
 	n.lock.Unlock()
 
 	removeNode(n)
@@ -111,7 +118,9 @@ func (n *Node) handleConnect(params []string) {
 		prevNode := findNodeByRelation(prev)
 
 		if prevNode != nil {
+			prevNode.lock.Lock()
 			log(fmt.Sprintf("New next connection, sending nextinfo to my prev, target_id=0x%X, next_id=0x%X", prevNode.id, n.id))
+			prevNode.lock.Unlock()
 			prevNode.sendMessage(nextinfo, idToString(n.id))
 		}
 	} else if n.r == prev {
@@ -144,19 +153,11 @@ func (n *Node) handleConnect(params []string) {
 	} else {
 		panic("invalid connection request")
 	}
-
-
-	/*if n.r == next {
-		prevNode := findNodeByRelation(prev)
-
-		if prevNode != nil {
-			log(fmt.Sprintf("New next connection, sending nextinfo to my prev, target_id=0x%X, next_id=0x%X", prevNode.id, n.id))
-			prevNode.sendMessage(nextinfo, idToString(n.id))
-		}
-	}*/
 }
 
 func (n *Node) handleClient() {
+	var zeroTime time.Time
+
 	addNode(n)
 
 	log(fmt.Sprintf("New connection (%s -> %s)", n.connection.LocalAddr().String(), n.connection.RemoteAddr().String()))
@@ -165,7 +166,14 @@ func (n *Node) handleClient() {
 
 	for n.connected {
 		updateStatus()
+
+		n.resetKeepAliveTimer()
+		n.connection.SetReadDeadline(time.Now().Add(connectionTimeoutSeconds * time.Second))
 		data, err := r.ReadString('\n')
+		n.connection.SetReadDeadline(zeroTime)
+		n.katLock.Lock()
+		n.kat.Stop()
+		n.katLock.Unlock()
 
 		if err != nil {
 			log(fmt.Sprintf("Client 0x%X disconnected, r=%s", n.id, n.r))
@@ -186,6 +194,35 @@ func (n *Node) handleClient() {
 	}
 
 	n.handleDisconnect()
+}
+
+func (n *Node) keepAlive() {
+	n.lock.Lock()
+
+	if n.connected && (n.r == next || n.r == leader) {
+		n.lock.Unlock()
+		log(fmt.Sprintf("Sending alivecheck (PING), target_id=0x%X", n.id))
+		n.sendMessage(alivecheck)
+	} else {
+		n.lock.Unlock()
+	}
+
+	n.resetKeepAliveTimer()
+}
+
+func (n *Node) resetKeepAliveTimer() {
+	n.lock.Lock()
+	defer n.lock.Unlock()
+	n.katLock.Lock()
+	defer n.katLock.Unlock()
+
+	if n.kat != nil {
+		n.kat.Stop()
+	}
+
+	if n.connected {
+		n.kat = time.AfterFunc(connectionTimeoutSeconds / 2 * time.Second, n.keepAlive)
+	}
 }
 
 // returns false on failure
@@ -398,18 +435,18 @@ func (n *Node) processMessage(m string) bool {
 			}
 
 		case chatmessagesend:
-			log(fmt.Sprintf("[%d] Received chatmessagesend from_id=0x%X", messageTime, n.id))
+			log(fmt.Sprintf("[%d] Received chatmessagesend, from_id=0x%X", messageTime, n.id))
 
 			user := getUsername(n)
 
 			chatmsg := []string{chatmessage, user}
 			chatmsg = append(chatmsg, msg[parseStartIx:]...)
 
-			log(fmt.Sprintf("Broadcasting chatmessagesend received at %d from_id=0x%X", messageTime, n.id))
+			log(fmt.Sprintf("Broadcasting chatmessagesend received at %d, from_id=0x%X", messageTime, n.id))
 			broadcastToFollowers(chatmsg[:]...)
 
 		case chatmessage:
-			log(fmt.Sprintf("[%d] Received chatmessage from_id=0x%X", messageTime, n.id))
+			log(fmt.Sprintf("[%d] Received chatmessage, from_id=0x%X", messageTime, n.id))
 			user := msg[parseStartIx]
 			var chatmsg bytes.Buffer
 
@@ -424,7 +461,7 @@ func (n *Node) processMessage(m string) bool {
 			chatMessageReceived(user, chatmsg.String())
 
 		case userlist:
-			log(fmt.Sprintf("[%d] Received userlist from_id=0x%X", messageTime, n.id))
+			log(fmt.Sprintf("[%d] Received userlist, from_id=0x%X", messageTime, n.id))
 			users := msg[parseStartIx:]
 			updateUsers(users)
 
@@ -435,8 +472,16 @@ func (n *Node) processMessage(m string) bool {
 				debugLog("NEXTINFO new twice next node id failure")
 				return false
 			}
-			log(fmt.Sprintf("[%d] Received nextinfo from_id=0x%X, twice_next_node_id=0x%X", messageTime, n.id, newTwiceNextNodeId))
+			log(fmt.Sprintf("[%d] Received nextinfo, from_id=0x%X, twice_next_node_id=0x%X", messageTime, n.id, newTwiceNextNodeId))
 			updateTwiceNextNodeId(newTwiceNextNodeId)
+
+		case alivecheck:
+			log(fmt.Sprintf("[%d] Received alivecheck (PING), from_id=0x%X", messageTime, n.id))
+			log(fmt.Sprintf("Sending aliveresponse (PONG) (alivecheck from %d), target_id=0x%X", messageTime, n.id))
+			n.sendMessage(aliveresponse)
+
+		case aliveresponse:
+			log(fmt.Sprintf("[%d] Received aliveresponse (PONG), from_id=0x%X", messageTime, n.id))
 		}
 
 	}
@@ -444,8 +489,8 @@ func (n *Node) processMessage(m string) bool {
 	return true
 }
 
-func nodeFromConnection(c net.Conn) *Node{
-	return &Node{0, none, c, true, &sync.Mutex{}}
+func nodeFromConnection(c net.Conn) *Node {
+	return &Node{0, none, c, true, &sync.Mutex{}, nil, &sync.Mutex{}}
 }
 
 func connectToClient(a string) *Node {

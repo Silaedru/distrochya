@@ -35,6 +35,8 @@ const (
 	chatmessage = "chatmessage" // params=user;message
 	chatmessagesend = "chmsgsend" // params=message
 	nextinfo = "nextinfo"
+	alivecheck = "alivecheck"
+	aliveresponse = "aliveresp"
 
 	// network states
 	noNetwork  = "No Network"
@@ -47,6 +49,7 @@ const (
 	leaderElectionTimeoutSeconds = 5
 	leaderElectionMinimumWait = 3
 	leaderElectionMaximumWait = 15
+	connectionTimeoutSeconds = 20
 )
 
 var networkGlobalsMutex *sync.Mutex = &sync.Mutex{}
