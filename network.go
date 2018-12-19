@@ -44,13 +44,13 @@ const (
 	ring       = "Ring"
 
 	// other
-	ringRepairTimeoutSeconds      = 3
-	sendMessageTimeoutSeconds     = 3
-	leaderElectionTimeoutSeconds  = 5
-	leaderElectionMinimumWait     = 3
-	leaderElectionMaximumWait     = 15
-	connectionTimeoutSeconds      = 30
-	connectionTimeoutGraceSeconds = 5
+	ringRepairTimeoutSeconds         = 3
+	sendMessageTimeoutSeconds        = 3
+	leaderElectionTimeoutSeconds     = 5
+	leaderElectionMinimumWaitSeconds = 3
+	leaderElectionMaximumWaitSeconds = 15
+	connectionTimeoutSeconds         = 30
+	connectionTimeoutGraceSeconds    = 5
 )
 
 var networkGlobalsMutex = &sync.Mutex{}
@@ -220,8 +220,6 @@ func closeRing(oldNextNodeID uint64) {
 			if twiceNextNode != nil {
 				twiceNextNode.lock.Lock()
 				twiceNextNode.id = twiceNextNodeID
-				//twiceNextNode.r = next
-				//twiceNextNode.lock.Unlock()
 			} else {
 				log("Connection to twice next node failed")
 				prevNode.lock.Lock()
@@ -324,11 +322,7 @@ func startServer(p uint16, newNetwork bool, resultChan chan bool) {
 	l, err := net.Listen("tcp4", fmt.Sprintf(":%d", p))
 
 	if err != nil {
-		if newNetwork {
-			userError(err.Error())
-		} else {
-			debugLog(err.Error())
-		}
+		userError(err.Error())
 		resultChan <- false
 		return
 	}

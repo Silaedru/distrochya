@@ -19,7 +19,7 @@ var leaderElectionTimer *time.Timer
 var electionParticipated uint32
 var electionStartTriggerFlag uint32
 
-func startElectionTimer(timeout uint8) {
+func startElectionTimer(t uint8) {
 	if getNetworkState() == singleNode {
 		log("Attempt to start election timer with networkState==singleNode, assuming leader role")
 		updateLeaderID(nodeID)
@@ -33,8 +33,8 @@ func startElectionTimer(timeout uint8) {
 		return
 	}
 
-	log(fmt.Sprintf("startElectionTimer timeout=%ds", timeout))
-	leaderElectionTimer := time.NewTimer(time.Duration(timeout) * time.Second)
+	log(fmt.Sprintf("startElectionTimer timeout=%ds", t))
+	leaderElectionTimer := time.NewTimer(time.Duration(t) * time.Second)
 
 	go func() {
 		<-leaderElectionTimer.C
@@ -77,7 +77,7 @@ func updateLeaderID(id uint64) {
 		resetElectionStartTriggerFlag()
 		stopElectionTimer()
 
-		startElectionTimer(uint8(leaderElectionMinimumWait + (rand.Uint32() % (leaderElectionMaximumWait - leaderElectionMinimumWait))))
+		startElectionTimer(uint8(leaderElectionMinimumWaitSeconds + (rand.Uint32() % (leaderElectionMaximumWaitSeconds - leaderElectionMinimumWaitSeconds))))
 	} else {
 		resetElectionParticipated()
 		resetElectionStartTriggerFlag()

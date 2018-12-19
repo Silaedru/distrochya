@@ -72,13 +72,6 @@ func (e *chatInput) Edit(v *gocui.View, key gocui.Key, ch rune, mod gocui.Modifi
 	case key == gocui.KeyEnd:
 		v.MoveCursor(len(v.Buffer())-1, 0, false)
 
-	case key == gocui.KeyF1:
-		return
-	case key == gocui.KeyF5:
-		return
-	case key == gocui.KeyF10:
-		return
-
 	case ch != 0 && mod == 0:
 		v.EditWrite(ch)
 	}
@@ -93,8 +86,12 @@ func clearView(n string) {
 		}
 
 		view.Clear()
-		view.SetCursor(0, 0)
-		view.SetOrigin(0, 0)
+		if err := view.SetCursor(0, 0); err != nil {
+			return err
+		}
+		if err := view.SetOrigin(0, 0); err != nil {
+			return err
+		}
 
 		return nil
 	})
@@ -108,7 +105,9 @@ func appendView(n string, s string) {
 			panic(err)
 		}
 
-		fmt.Fprint(view, s)
+		if _, err := fmt.Fprint(view, s); err != nil {
+			return err
+		}
 
 		return nil
 	})
@@ -123,9 +122,15 @@ func overwriteView(n string, s string) {
 		}
 
 		view.Clear()
-		view.SetCursor(0, 0)
-		view.SetOrigin(0, 0)
-		fmt.Fprint(view, s)
+		if err := view.SetCursor(0, 0); err != nil {
+			return err
+		}
+		if err := view.SetOrigin(0, 0); err != nil {
+			return err
+		}
+		if _, err := fmt.Fprint(view, s); err != nil {
+			return err
+		}
 
 		return nil
 	})
@@ -174,7 +179,7 @@ func updateStatus() {
 			" Twice Next Node ID: \x1b[33;1m0x%X\x1b[0m (%s)\n"+
 			"          Leader ID: \x1b[33;1m0x%X\x1b[0m (%s)\n"+
 			"\n"+
-			" Connected nodes:\n%s\n\n   ----- END -----", readTime(),
+			" Connected nodes:\n%s\n\n   ----- END -----", getTime(),
 			getNetworkState(), nodeID, idToEndpoint(nodeID), getTwiceNextNodeID(),
 			idToEndpoint(getTwiceNextNodeID()), getLeaderID(),
 			idToEndpoint(getLeaderID()), nodesStr))
@@ -283,9 +288,9 @@ func layout(g *gocui.Gui) error {
 	controlsView.Wrap = true
 	controlsView.Frame = false
 
-	g.SetCurrentView(chatInputViewName)
+	_, err = g.SetCurrentView(chatInputViewName)
 
-	return nil
+	return err
 }
 
 func scrollView(vn string, dy int) {
@@ -303,62 +308,86 @@ func scrollView(vn string, dy int) {
 	}
 }
 
-func setupKeyBindings(g *gocui.Gui) {
-	g.SetKeybinding("", gocui.KeyPgup, gocui.ModNone, func(g *gocui.Gui, v *gocui.View) error {
+func setupKeyBindings(g *gocui.Gui) error {
+	if err := g.SetKeybinding("", gocui.KeyPgup, gocui.ModNone, func(g *gocui.Gui, v *gocui.View) error {
 		scrollView(usersViewName, -1)
 		return nil
-	})
+	}); err != nil {
+		return err
+	}
 
-	g.SetKeybinding("", gocui.KeyPgdn, gocui.ModNone, func(g *gocui.Gui, v *gocui.View) error {
+	if err := g.SetKeybinding("", gocui.KeyPgdn, gocui.ModNone, func(g *gocui.Gui, v *gocui.View) error {
 		scrollView(usersViewName, 1)
 		return nil
-	})
+	}); err != nil {
+		return err
+	}
 
-	g.SetKeybinding("", gocui.KeyF6, gocui.ModNone, func(g *gocui.Gui, v *gocui.View) error {
+	if err := g.SetKeybinding("", gocui.KeyF6, gocui.ModNone, func(g *gocui.Gui, v *gocui.View) error {
 		scrollView(chatViewName, -1)
 		return nil
-	})
+	}); err != nil {
+		return err
+	}
 
-	g.SetKeybinding("", gocui.KeyF7, gocui.ModNone, func(g *gocui.Gui, v *gocui.View) error {
+	if err := g.SetKeybinding("", gocui.KeyF7, gocui.ModNone, func(g *gocui.Gui, v *gocui.View) error {
 		scrollView(chatViewName, 1)
 		return nil
-	})
+	}); err != nil {
+		return err
+	}
 
-	g.SetKeybinding("", gocui.KeyF1, gocui.ModNone, func(g *gocui.Gui, v *gocui.View) error {
+	if err := g.SetKeybinding("", gocui.KeyF1, gocui.ModNone, func(g *gocui.Gui, v *gocui.View) error {
 		processCommand("/help", nil)
 		return nil
-	})
+	}); err != nil {
+		return err
+	}
 
-	g.SetKeybinding("", gocui.KeyF5, gocui.ModNone, func(g *gocui.Gui, v *gocui.View) error {
+	if err := g.SetKeybinding("", gocui.KeyF5, gocui.ModNone, func(g *gocui.Gui, v *gocui.View) error {
 		updateStatus()
 		return nil
-	})
+	}); err != nil {
+		return err
+	}
 
-	g.SetKeybinding("", gocui.KeyF10, gocui.ModNone, func(g *gocui.Gui, v *gocui.View) error {
+	if err := g.SetKeybinding("", gocui.KeyF10, gocui.ModNone, func(g *gocui.Gui, v *gocui.View) error {
 		return gocui.ErrQuit
-	})
+	}); err != nil {
+		return err
+	}
 
 	if debugEnabled {
-		g.SetKeybinding("", gocui.KeyF11, gocui.ModNone, func(g *gocui.Gui, v *gocui.View) error {
+		if err := g.SetKeybinding("", gocui.KeyF11, gocui.ModNone, func(g *gocui.Gui, v *gocui.View) error {
 			scrollView(statusViewName, -1)
 			return nil
-		})
+		}); err != nil {
+			return err
+		}
 
-		g.SetKeybinding("", gocui.KeyF12, gocui.ModNone, func(g *gocui.Gui, v *gocui.View) error {
+		if err := g.SetKeybinding("", gocui.KeyF12, gocui.ModNone, func(g *gocui.Gui, v *gocui.View) error {
 			scrollView(statusViewName, 1)
 			return nil
-		})
+		}); err != nil {
+			return err
+		}
 
-		g.SetKeybinding("", gocui.KeyF8, gocui.ModNone, func(g *gocui.Gui, v *gocui.View) error {
+		if err := g.SetKeybinding("", gocui.KeyF8, gocui.ModNone, func(g *gocui.Gui, v *gocui.View) error {
 			scrollView(logViewName, -1)
 			return nil
-		})
+		}); err != nil {
+			return err
+		}
 
-		g.SetKeybinding("", gocui.KeyF9, gocui.ModNone, func(g *gocui.Gui, v *gocui.View) error {
+		if err := g.SetKeybinding("", gocui.KeyF9, gocui.ModNone, func(g *gocui.Gui, v *gocui.View) error {
 			scrollView(logViewName, 1)
 			return nil
-		})
+		}); err != nil {
+			return err
+		}
 	}
+
+	return nil
 }
 
 func initializeTui() {
@@ -372,7 +401,11 @@ func initializeTui() {
 	defer gui.Close()
 
 	gui.SetManagerFunc(layout)
-	setupKeyBindings(gui)
+	err = setupKeyBindings(gui)
+
+	if err != nil {
+		panic(err)
+	}
 
 	gui.Cursor = true
 	gui.Mouse = false

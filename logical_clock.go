@@ -44,7 +44,7 @@ func resetTime() {
 	timeLock.Unlock()
 }
 
-func readTime() uint64 {
+func getTime() uint64 {
 	timeLock.Lock()
 
 	rtn := currentTime
