@@ -24,19 +24,19 @@ const (
 
 	// messages
 	// magic;message;params\n
-	sepchar   = ";"
-	magic     = "d"
-	connect   = "connect"   // params=id;requested_relation;params
-	netinfo   = "netinfo"   // params=node_id;next_id;leader_id
-	closering = "closering" // params=sender_id
-	election  = "election"  // params=candidate_id
-	elected   = "elected"   // params=leader_id
-	userlist  = "userlist"  // params=[users]
-	chatmessage = "chatmessage" // params=user;message
-	chatmessagesend = "chmsgsend" // params=message
-	nextinfo = "nextinfo" //params=next_id
-	alivecheck = "alivecheck" //no params
-	aliveresponse = "aliveresp" // no params
+	sepchar         = ";"
+	magic           = "d"
+	connect         = "connect"     // params=id;requested_relation;params
+	netinfo         = "netinfo"     // params=node_id;next_id;leader_id
+	closering       = "closering"   // params=sender_id
+	election        = "election"    // params=candidate_id
+	elected         = "elected"     // params=leader_id
+	userlist        = "userlist"    // params=[users]
+	chatmessage     = "chatmessage" // params=user;message
+	chatmessagesend = "chmsgsend"   // params=message
+	nextinfo        = "nextinfo"    //params=next_id
+	alivecheck      = "alivecheck"  //no params
+	aliveresponse   = "aliveresp"   // no params
 
 	// network states
 	noNetwork  = "No Network"
@@ -44,20 +44,20 @@ const (
 	ring       = "Ring"
 
 	// other
-	ringRepairTimeoutSeconds  = 3
-	sendMessageTimeoutSeconds = 3
-	leaderElectionTimeoutSeconds = 5
-	leaderElectionMinimumWait = 3
-	leaderElectionMaximumWait = 15
-	connectionTimeoutSeconds = 30
+	ringRepairTimeoutSeconds      = 3
+	sendMessageTimeoutSeconds     = 3
+	leaderElectionTimeoutSeconds  = 5
+	leaderElectionMinimumWait     = 3
+	leaderElectionMaximumWait     = 15
+	connectionTimeoutSeconds      = 30
 	connectionTimeoutGraceSeconds = 5
 )
 
-var networkGlobalsMutex *sync.Mutex = &sync.Mutex{}
-var networkStateMutex *sync.Mutex = &sync.Mutex{}
+var networkGlobalsMutex = &sync.Mutex{}
+var networkStateMutex = &sync.Mutex{}
 
 var server net.Listener
-var networkState string = noNetwork
+var networkState = noNetwork
 var nodeId uint64
 var twiceNextNodeId uint64
 var nodes *nodeSyncLinkedList
@@ -77,7 +77,7 @@ func updateNetworkState(s string) {
 	}
 }
 
-func readNetworkState() string {
+func getNetworkState() string {
 	networkStateMutex.Lock()
 
 	rtn := networkState
@@ -107,8 +107,8 @@ func resetNode() {
 	resetConnectedName()
 
 	connectedNodes := nodes.toSlice()
-	
-	for _, node := range(connectedNodes) {
+
+	for _, node := range connectedNodes {
 		node.disconnect()
 	}
 
@@ -122,7 +122,7 @@ func initNode(ip uint32, p uint16) {
 
 	resetTime()
 	updateUsers(nil)
-	
+
 	nodeId = createNodeId(ip, p, uint16(rand.Uint32()))
 	updateTwiceNextNodeId(0)
 	nodes = newNodeSyncLinkedList()
@@ -165,7 +165,7 @@ func stringToId(s string) (uint64, error) {
 func isNetworkRunning() bool {
 	networkGlobalsMutex.Lock()
 	defer networkGlobalsMutex.Unlock()
-	
+
 	return server != nil
 }
 
@@ -177,7 +177,7 @@ func broadcastToFollowers(m ...string) {
 		nodes.lock.Lock()
 		defer nodes.lock.Unlock()
 
-		cn := nodes.head 
+		cn := nodes.head
 
 		for cn != nil {
 			cn.data.lock.Lock()
@@ -215,8 +215,8 @@ func closeRing(oldNextNodeId uint64) {
 			prevNode.lock.Unlock()
 
 			twiceNextNodeId := getTwiceNextNodeId()
-			twiceNextNode := connectToClient(idToEndpoint(twiceNextNodeId))
-			
+			twiceNextNode := connectToNode(idToEndpoint(twiceNextNodeId))
+
 			if twiceNextNode != nil {
 				twiceNextNode.lock.Lock()
 				twiceNextNode.id = twiceNextNodeId
@@ -256,7 +256,7 @@ func closeRing(oldNextNodeId uint64) {
 
 func findNodeByRelation(r relation) *Node {
 	networkGlobalsMutex.Lock()
-	
+
 	var rtn *Node
 	if nodes != nil {
 		rtn = nodes.findSingleByRelation(r)
@@ -269,7 +269,7 @@ func findNodeByRelation(r relation) *Node {
 
 func findNodeByRelationExcludingId(r relation, id uint64) *Node {
 	networkGlobalsMutex.Lock()
-	
+
 	var rtn *Node
 	if nodes != nil {
 		rtn = nodes.findSingleByRelationExcludingId(r, id)
@@ -295,7 +295,7 @@ func addNode(n *Node) {
 
 	if nodes != nil {
 		nodes.add(n)
-	}	
+	}
 }
 
 func createNodeId(i uint32, p uint16, f uint16) uint64 {
@@ -356,7 +356,7 @@ func startServer(p uint16, newNetwork bool, resultChan chan bool) {
 		}
 
 		n := nodeFromConnection(c)
-		go n.handleClient()
+		go n.handleConnection()
 	}
 }
 
@@ -390,7 +390,7 @@ func joinNetwork(a string, p uint16) {
 	go startServer(p, false, serverStartResultChan)
 
 	if <-serverStartResultChan {
-		node := connectToClient(a)
+		node := connectToNode(a)
 
 		if node == nil {
 			disconnect()

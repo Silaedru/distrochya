@@ -1,11 +1,11 @@
 package main
 
 import (
+	"bytes"
 	"fmt"
 	"github.com/jroimartin/gocui"
 	"strings"
 	"time"
-	"bytes"
 )
 
 const (
@@ -34,7 +34,7 @@ func (e *chatInput) onEnter(v *gocui.View) {
 	v.SetCursor(0, 0)
 	v.SetOrigin(0, 0)
 
-	if len(input) > 0 { 
+	if len(input) > 0 {
 		if input[0] == '/' {
 			args := strings.Split(input, " ")
 			processCommand(args[0], args[1:])
@@ -134,7 +134,7 @@ func overwriteView(n string, s string) {
 func updateUsers(us []string) {
 	var b bytes.Buffer
 
-	for _, u := range(us) {
+	for _, u := range us {
 		b.WriteString(fmt.Sprintf("%s\n", u))
 	}
 
@@ -175,9 +175,9 @@ func updateStatus() {
 			"          Leader ID: \x1b[33;1m0x%X\x1b[0m (%s)\n"+
 			"\n"+
 			" Connected nodes:\n%s\n\n   ----- END -----", readTime(),
-			 readNetworkState(), nodeId, idToEndpoint(nodeId), getTwiceNextNodeId(),
-			  idToEndpoint(getTwiceNextNodeId()), readLeaderId(), 
-			  idToEndpoint(readLeaderId()), nodesStr))
+			getNetworkState(), nodeId, idToEndpoint(nodeId), getTwiceNextNodeId(),
+			idToEndpoint(getTwiceNextNodeId()), getLeaderId(),
+			idToEndpoint(getLeaderId()), nodesStr))
 
 		networkGlobalsMutex.Unlock()
 	}()
@@ -290,17 +290,17 @@ func layout(g *gocui.Gui) error {
 
 func scrollView(vn string, dy int) {
 	// thanks to https://github.com/jroimartin/gocui/issues/84
-    v, _ := gui.View(vn)
-    
-    _, y := v.Size()
-    ox, oy := v.Origin()
+	v, _ := gui.View(vn)
 
-    if oy+dy > strings.Count(v.ViewBuffer(), "\n")-y-1 {
-        v.Autoscroll = true
-    } else {
-        v.Autoscroll = false
-        v.SetOrigin(ox, oy+dy)
-    }
+	_, y := v.Size()
+	ox, oy := v.Origin()
+
+	if oy+dy > strings.Count(v.ViewBuffer(), "\n")-y-1 {
+		v.Autoscroll = true
+	} else {
+		v.Autoscroll = false
+		v.SetOrigin(ox, oy+dy)
+	}
 }
 
 func setupKeyBindings(g *gocui.Gui) {
@@ -379,24 +379,24 @@ func initializeTui() {
 	gui.InputEsc = true
 
 	if debugEnabled {
-		overwriteView(controlsViewName, "" +
-			"\x1b[30;46m F1: Help \x1b[0m " +
-			"\x1b[30;46m F5: Refresh status \x1b[0m " +
-			"\x1b[30;46m F6/F7: Scroll chat \x1b[0m " +
-			"\x1b[30;46m F8/F9: Scroll log \x1b[0m " +
-			"\x1b[30;46m F10: Quit \x1b[0m " +
-			"\x1b[30;46m F11/F12: Scroll status \x1b[0m " +
+		overwriteView(controlsViewName, ""+
+			"\x1b[30;46m F1: Help \x1b[0m "+
+			"\x1b[30;46m F5: Refresh status \x1b[0m "+
+			"\x1b[30;46m F6/F7: Scroll chat \x1b[0m "+
+			"\x1b[30;46m F8/F9: Scroll log \x1b[0m "+
+			"\x1b[30;46m F10: Quit \x1b[0m "+
+			"\x1b[30;46m F11/F12: Scroll status \x1b[0m "+
 			"\x1b[30;46m PgUp/PgDn: Scroll users \x1b[0m ")
 	} else {
-		overwriteView(controlsViewName, "" +
-			"\x1b[30;46m F1: Help \x1b[0m " +
-			"\x1b[30;46m F5: Refresh status \x1b[0m " +
-			"\x1b[30;46m F6/F7: Scroll chat \x1b[0m " +
-			"\x1b[30;46m F10: Quit \x1b[0m " +
+		overwriteView(controlsViewName, ""+
+			"\x1b[30;46m F1: Help \x1b[0m "+
+			"\x1b[30;46m F5: Refresh status \x1b[0m "+
+			"\x1b[30;46m F6/F7: Scroll chat \x1b[0m "+
+			"\x1b[30;46m F10: Quit \x1b[0m "+
 			"\x1b[30;46m PgUp/PgDn: Scroll users \x1b[0m ")
 	}
 
-	// hack to enable initial autoscroll on log and chat 
+	// hack to enable initial autoscroll on log and chat
 	gui.Update(func(g *gocui.Gui) error {
 		if debugEnabled {
 			scrollView(logViewName, 1)

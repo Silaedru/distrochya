@@ -2,25 +2,25 @@ package main
 
 import (
 	"fmt"
+	"math/rand"
 	"sync"
 	"sync/atomic"
 	"time"
-	"math/rand"
 )
 
 var leaderId uint64
 var oldLeaderId uint64
 var chatParticipation uint32 = 1
-var chatNameMutex *sync.Mutex = &sync.Mutex{}
-var chatName string = "User"
+var chatNameMutex = &sync.Mutex{}
+var chatName = "User"
 
-var leaderElectionMutex *sync.Mutex = &sync.Mutex{}
+var leaderElectionMutex = &sync.Mutex{}
 var leaderElectionTimer *time.Timer
 var electionParticipated uint32
 var electionStartTriggerFlag uint32
 
 func startElectionTimer(timeout uint8) {
-	if readNetworkState() == singleNode {
+	if getNetworkState() == singleNode {
 		log("Attempt to start election timer with networkState==singleNode, assuming leader role")
 		updateLeaderId(nodeId)
 		return
@@ -37,9 +37,9 @@ func startElectionTimer(timeout uint8) {
 	leaderElectionTimer := time.NewTimer(time.Duration(timeout) * time.Second)
 
 	go func() {
-		<- leaderElectionTimer.C
-		
-		if readLeaderId() == 0 {
+		<-leaderElectionTimer.C
+
+		if getLeaderId() == 0 {
 			log("Absence of leader detected")
 			setElectionParticipated()
 
@@ -50,7 +50,7 @@ func startElectionTimer(timeout uint8) {
 				prevNode := findNodeByRelation(prev)
 
 				if prevNode == nil {
-					log("Absence of leader detected without having next or prev node, falling back to singleNode")	
+					log("Absence of leader detected without having next or prev node, falling back to singleNode")
 					updateNetworkState(singleNode)
 				} else {
 					log("Absence of leader detected without having next node: Awaiting ring repair")
@@ -65,7 +65,7 @@ func startElectionTimer(timeout uint8) {
 }
 
 func updateLeaderId(id uint64) {
-	atomic.StoreUint64(&oldLeaderId, readLeaderId())
+	atomic.StoreUint64(&oldLeaderId, getLeaderId())
 	atomic.StoreUint64(&leaderId, id)
 
 	if server == nil {
@@ -77,7 +77,7 @@ func updateLeaderId(id uint64) {
 		resetElectionStartTriggerFlag()
 		stopElectionTimer()
 
-		startElectionTimer(uint8(leaderElectionMinimumWait + (rand.Uint32() % (leaderElectionMaximumWait-leaderElectionMinimumWait))))
+		startElectionTimer(uint8(leaderElectionMinimumWait + (rand.Uint32() % (leaderElectionMaximumWait - leaderElectionMinimumWait))))
 	} else {
 		resetElectionParticipated()
 		resetElectionStartTriggerFlag()
@@ -97,7 +97,7 @@ func setElectionParticipated() {
 	atomic.StoreUint32(&electionParticipated, 1)
 }
 
-func readLeaderId() uint64 {
+func getLeaderId() uint64 {
 	return atomic.LoadUint64(&leaderId)
 }
 
@@ -179,8 +179,8 @@ func connectToLeader() {
 
 	disconnectFromLeader()
 
-	newLeaderId := readLeaderId()
-	newLeader := connectToClient(idToEndpoint(newLeaderId))
+	newLeaderId := getLeaderId()
+	newLeader := connectToNode(idToEndpoint(newLeaderId))
 
 	if newLeader == nil {
 		updateLeaderId(0)
@@ -199,7 +199,7 @@ func connectToLeader() {
 
 func disconnectFromLeader() {
 	resetConnectedName()
-	
+
 	existingLeader := findNodeByRelation(leader)
 
 	if existingLeader != nil {

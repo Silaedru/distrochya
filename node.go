@@ -17,9 +17,9 @@ type Node struct {
 	r          relation
 	connection net.Conn
 	connected  bool
-	lock	   *sync.Mutex
-	kat *time.Timer
-	katLock *sync.Mutex
+	lock       *sync.Mutex
+	kat        *time.Timer
+	katLock    *sync.Mutex
 }
 
 func (n *Node) disconnect() {
@@ -48,7 +48,7 @@ func (n *Node) sendMessage(m ...string) {
 
 func (n *Node) handleDisconnect() {
 	defer updateStatus()
-	
+
 	n.lock.Lock()
 	n.connected = false
 	id := n.id
@@ -65,8 +65,8 @@ func (n *Node) handleDisconnect() {
 	if r == next {
 		closeRing(id)
 
-		if id == readLeaderId() || id == getOldLeaderId() {
-			if readNetworkState() == ring {
+		if id == getLeaderId() || id == getOldLeaderId() {
+			if getNetworkState() == ring {
 				log("Detected leader node disconnect from r=next")
 				updateLeaderId(0)
 				setElectionStartTriggerFlag()
@@ -74,7 +74,7 @@ func (n *Node) handleDisconnect() {
 			}
 		}
 	} else if r == leader {
-		if readNetworkState() == ring {
+		if getNetworkState() == ring {
 			log("Leader lost!")
 			updateLeaderId(0)
 		}
@@ -88,7 +88,7 @@ func (n *Node) handleDisconnect() {
 	}
 }
 
-func (n *Node) handleConnect(params []string) {
+func (n *Node) processConnectMessage(params []string) {
 	n.lock.Lock()
 	defer n.lock.Unlock()
 
@@ -96,10 +96,10 @@ func (n *Node) handleConnect(params []string) {
 		n.r = next
 
 		oldNext := findNodeByRelationExcludingId(next, n.id)
-		
+
 		if oldNext == nil {
-			log(fmt.Sprintf("New connection with r=none (id=0x%X), sending netinfo my_id=0x%X, next_id=0x%X (no existing nextnode found), leader_id=0x%X, twice_next_node_id=0x%X", n.id, nodeId, nodeId, readLeaderId(), n.id))
-			n.sendMessage(netinfo, idToString(nodeId), idToString(nodeId), idToString(readLeaderId()), idToString(n.id))
+			log(fmt.Sprintf("New connection with r=none (id=0x%X), sending netinfo my_id=0x%X, next_id=0x%X (no existing nextnode found), leader_id=0x%X, twice_next_node_id=0x%X", n.id, nodeId, nodeId, getLeaderId(), n.id))
+			n.sendMessage(netinfo, idToString(nodeId), idToString(nodeId), idToString(getLeaderId()), idToString(n.id))
 			updateNetworkState(ring)
 			updateTwiceNextNodeId(nodeId)
 		} else {
@@ -111,8 +111,8 @@ func (n *Node) handleConnect(params []string) {
 			oldNext.lock.Unlock()
 			oldNext.disconnect()
 
-			log(fmt.Sprintf("New connection with r=none (id=0x%X), sending netinfo my_id=0x%X, next_id=0x%X, leader_id=0x%X, twice_next_node_id=0x%X", n.id, nodeId, oldNext.id, readLeaderId(), oldTwiceNextNodeId))
-			n.sendMessage(netinfo, idToString(nodeId), idToString(oldNext.id), idToString(readLeaderId()), idToString(oldTwiceNextNodeId))
+			log(fmt.Sprintf("New connection with r=none (id=0x%X), sending netinfo my_id=0x%X, next_id=0x%X, leader_id=0x%X, twice_next_node_id=0x%X", n.id, nodeId, oldNext.id, getLeaderId(), oldTwiceNextNodeId))
+			n.sendMessage(netinfo, idToString(nodeId), idToString(oldNext.id), idToString(getLeaderId()), idToString(oldTwiceNextNodeId))
 		}
 
 		prevNode := findNodeByRelation(prev)
@@ -155,7 +155,7 @@ func (n *Node) handleConnect(params []string) {
 	}
 }
 
-func (n *Node) handleClient() {
+func (n *Node) handleConnection() {
 	var zeroTime time.Time
 
 	addNode(n)
@@ -221,7 +221,7 @@ func (n *Node) resetKeepAliveTimer() {
 	}
 
 	if n.connected {
-		n.kat = time.AfterFunc(connectionTimeoutSeconds / 3 * time.Second, n.keepAlive)
+		n.kat = time.AfterFunc(connectionTimeoutSeconds/3*time.Second, n.keepAlive)
 	}
 }
 
@@ -258,7 +258,7 @@ func (n *Node) processMessage(m string) bool {
 			n.lock.Unlock()
 
 			log(fmt.Sprintf("[%d] Received connect message: remote_id=0x%X, r=%s", messageTime, n.id, n.r))
-			n.handleConnect(msg[parseStartIx+2:])
+			n.processConnectMessage(msg[parseStartIx+2:])
 
 		case netinfo:
 			remoteNodeId, err := stringToId(msg[parseStartIx])
@@ -294,7 +294,7 @@ func (n *Node) processMessage(m string) bool {
 			log(fmt.Sprintf("[%d] Received netinfo: remote_id=0x%X, next_id=0x%X, leader_id=0x%X, twice_next_node_id=0x%X", messageTime, remoteNodeId, nextId, remoteLeaderId, remoteTwiceNextNodeId))
 
 			log(fmt.Sprintf("Attempting to connect to remote node, id=0x%X", remoteNodeId))
-			nextNode := connectToClient(idToEndpoint(nextId))
+			nextNode := connectToNode(idToEndpoint(nextId))
 			if nextNode == nil {
 				log(fmt.Sprintf("Connection to remote node failed!, id=0x%X", remoteNodeId))
 				log("Will now attempt to close the ring")
@@ -340,11 +340,11 @@ func (n *Node) processMessage(m string) bool {
 			} else {
 				log(fmt.Sprintf("[%d] Received closering without having a prevNode! from_id=0x%X, sender_id=0x%X", messageTime, n.id, senderId))
 				log(fmt.Sprintf("Sending connect message: target_id=0x%X, my_id=0x%X, r=%s", senderId, nodeId, next))
-				
+
 				if n.r == none {
 					prevNode = n
 				} else {
-					prevNode = connectToClient(idToEndpoint(senderId))
+					prevNode = connectToNode(idToEndpoint(senderId))
 				}
 
 				if prevNode == nil {
@@ -375,7 +375,7 @@ func (n *Node) processMessage(m string) bool {
 				return false
 			}
 
-			if readLeaderId() != 0 {
+			if getLeaderId() != 0 {
 				log("New election detected, removing currently elected leader")
 				updateLeaderId(0)
 			}
@@ -390,13 +390,13 @@ func (n *Node) processMessage(m string) bool {
 				if candidateId == nodeId {
 					log(fmt.Sprintf("[%d] This node has been elected as a new leader! (candidate_id == my_id)", messageTime))
 
-					log(fmt.Sprintf("[%d] Sending elected to target_id=0x%X", messageTime, nextNode.id))					
+					log(fmt.Sprintf("[%d] Sending elected to target_id=0x%X", messageTime, nextNode.id))
 					nextNode.sendMessage(elected, idToString(nodeId))
 					handleNewLeader(nodeId)
 				} else if candidateId > nodeId {
 					log(fmt.Sprintf("[%d] Forwarding election (candidate_id > my_id), target_id=0x%X, candidate_id=0x%X", messageTime, nextNode.id, candidateId))
 					setElectionParticipated()
-					
+
 					nextNode.sendMessage(election, idToString(candidateId))
 				} else {
 					log(fmt.Sprintf("[%d] Discarding election (candidate_id < my_id)", messageTime))
@@ -450,10 +450,10 @@ func (n *Node) processMessage(m string) bool {
 			user := msg[parseStartIx]
 			var chatmsg bytes.Buffer
 
-			for i:=parseStartIx+1; i<len(msg); i++ {
+			for i := parseStartIx + 1; i < len(msg); i++ {
 				chatmsg.WriteString(msg[i])
-				
-				if i+1<len(msg) {
+
+				if i+1 < len(msg) {
 					chatmsg.WriteString(sepchar)
 				}
 			}
@@ -493,7 +493,7 @@ func nodeFromConnection(c net.Conn) *Node {
 	return &Node{0, none, c, true, &sync.Mutex{}, nil, &sync.Mutex{}}
 }
 
-func connectToClient(a string) *Node {
+func connectToNode(a string) *Node {
 	c, err := net.Dial("tcp4", a)
 
 	if err != nil {
@@ -502,7 +502,7 @@ func connectToClient(a string) *Node {
 	}
 
 	n := nodeFromConnection(c)
-	go n.handleClient()
+	go n.handleConnection()
 
 	return n
 }

@@ -5,7 +5,7 @@ import (
 )
 
 var currentTime uint64 = 0
-var timeLock *sync.Mutex = &sync.Mutex{}
+var timeLock = &sync.Mutex{}
 
 func advanceTime() uint64 {
 	timeLock.Lock()
@@ -40,7 +40,7 @@ func resetTime() {
 	timeLock.Lock()
 
 	currentTime = 0
-	
+
 	timeLock.Unlock()
 }
 
