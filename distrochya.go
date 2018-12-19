@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"math/rand"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -175,7 +176,15 @@ func initCommands() {
 }
 
 func main() {
+	args := os.Args[1:]
+
+	for _, arg := range args {
+		if arg == "--nodebug" {
+			debugEnabled = false
+		}
+	}
+
 	rand.Seed(time.Now().UnixNano())
 	initCommands()
-	initializeTui()
+	initTUI()
 }

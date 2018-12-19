@@ -390,7 +390,7 @@ func setupKeyBindings(g *gocui.Gui) error {
 	return nil
 }
 
-func initializeTui() {
+func initTUI() {
 	var err error
 	gui, err = gocui.NewGui(gocui.OutputNormal)
 
