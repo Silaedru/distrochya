@@ -34,9 +34,9 @@ const (
 	userlist  = "userlist"  // params=[users]
 	chatmessage = "chatmessage" // params=user;message
 	chatmessagesend = "chmsgsend" // params=message
-	nextinfo = "nextinfo"
-	alivecheck = "alivecheck"
-	aliveresponse = "aliveresp"
+	nextinfo = "nextinfo" //params=next_id
+	alivecheck = "alivecheck" //no params
+	aliveresponse = "aliveresp" // no params
 
 	// network states
 	noNetwork  = "No Network"
@@ -324,7 +324,11 @@ func startServer(p uint16, newNetwork bool, resultChan chan bool) {
 	l, err := net.Listen("tcp4", fmt.Sprintf(":%d", p))
 
 	if err != nil {
-		userError(err.Error())
+		if newNetwork {
+			userError(err.Error())
+		} else {
+			debugLog(err.Error())
+		}
 		resultChan <- false
 		return
 	}
