@@ -65,10 +65,10 @@ func (n *Node) handleDisconnect() {
 	if r == next {
 		closeRing(id)
 
-		if id == getLeaderId() || id == getOldLeaderId() {
+		if id == getLeaderID() || id == getOldLeaderID() {
 			if getNetworkState() == ring {
 				log("Detected leader node disconnect from r=next")
-				updateLeaderId(0)
+				updateLeaderID(0)
 				setElectionStartTriggerFlag()
 				log("Election start trigger flag set")
 			}
@@ -76,7 +76,7 @@ func (n *Node) handleDisconnect() {
 	} else if r == leader {
 		if getNetworkState() == ring {
 			log("Leader lost!")
-			updateLeaderId(0)
+			updateLeaderID(0)
 		}
 	} else if r == follower {
 		removeChatConnection(n)
@@ -95,24 +95,24 @@ func (n *Node) processConnectMessage(params []string) {
 	if n.r == none {
 		n.r = next
 
-		oldNext := findNodeByRelationExcludingId(next, n.id)
+		oldNext := findNodeByRelationExcludingID(next, n.id)
 
 		if oldNext == nil {
-			log(fmt.Sprintf("New connection with r=none (id=0x%X), sending netinfo my_id=0x%X, next_id=0x%X (no existing nextnode found), leader_id=0x%X, twice_next_node_id=0x%X", n.id, nodeId, nodeId, getLeaderId(), n.id))
-			n.sendMessage(netinfo, idToString(nodeId), idToString(nodeId), idToString(getLeaderId()), idToString(n.id))
+			log(fmt.Sprintf("New connection with r=none (id=0x%X), sending netinfo my_id=0x%X, next_id=0x%X (no existing nextnode found), leader_id=0x%X, twice_next_node_id=0x%X", n.id, nodeID, nodeID, getLeaderID(), n.id))
+			n.sendMessage(netinfo, idToString(nodeID), idToString(nodeID), idToString(getLeaderID()), idToString(n.id))
 			updateNetworkState(ring)
-			updateTwiceNextNodeId(nodeId)
+			updateTwiceNextNodeID(nodeID)
 		} else {
 			log(fmt.Sprintf("New next connection while in ring, closing oldNext; old_next_id=0x%X, new_next_id=0x%X", oldNext.id, n.id))
-			oldTwiceNextNodeId := getTwiceNextNodeId()
+			oldTwiceNextNodeID := getTwiceNextNodeID()
 			oldNext.lock.Lock()
 			oldNext.r = none
-			updateTwiceNextNodeId(oldNext.id)
+			updateTwiceNextNodeID(oldNext.id)
 			oldNext.lock.Unlock()
 			oldNext.disconnect()
 
-			log(fmt.Sprintf("New connection with r=none (id=0x%X), sending netinfo my_id=0x%X, next_id=0x%X, leader_id=0x%X, twice_next_node_id=0x%X", n.id, nodeId, oldNext.id, getLeaderId(), oldTwiceNextNodeId))
-			n.sendMessage(netinfo, idToString(nodeId), idToString(oldNext.id), idToString(getLeaderId()), idToString(oldTwiceNextNodeId))
+			log(fmt.Sprintf("New connection with r=none (id=0x%X), sending netinfo my_id=0x%X, next_id=0x%X, leader_id=0x%X, twice_next_node_id=0x%X", n.id, nodeID, oldNext.id, getLeaderID(), oldTwiceNextNodeID))
+			n.sendMessage(netinfo, idToString(nodeID), idToString(oldNext.id), idToString(getLeaderID()), idToString(oldTwiceNextNodeID))
 		}
 
 		prevNode := findNodeByRelation(prev)
@@ -246,7 +246,7 @@ func (n *Node) processMessage(m string) bool {
 
 		// node would like to connect
 		case connect:
-			id, err := stringToId(msg[parseStartIx])
+			id, err := stringToID(msg[parseStartIx])
 			if err != nil {
 				debugLog("CONNECT id err")
 				return false
@@ -261,102 +261,102 @@ func (n *Node) processMessage(m string) bool {
 			n.processConnectMessage(msg[parseStartIx+2:])
 
 		case netinfo:
-			remoteNodeId, err := stringToId(msg[parseStartIx])
+			remoteNodeID, err := stringToID(msg[parseStartIx])
 			if err != nil {
-				debugLog("NETINFO remoteNodeId err")
+				debugLog("NETINFO remoteNodeID err")
 				return false
 			}
 
-			nextId, err := stringToId(msg[parseStartIx+1])
+			nextID, err := stringToID(msg[parseStartIx+1])
 			if err != nil {
-				debugLog("NETINFO nextId err")
+				debugLog("NETINFO nextID err")
 				return false
 			}
 
-			remoteLeaderId, err := stringToId(msg[parseStartIx+2])
+			remoteLeaderID, err := stringToID(msg[parseStartIx+2])
 			if err != nil {
-				debugLog("NETINFO remoteLeaderId err")
+				debugLog("NETINFO remoteLeaderID err")
 				return false
 			}
 
-			remoteTwiceNextNodeId, err := stringToId(msg[parseStartIx+3])
+			remoteTwiceNextNodeID, err := stringToID(msg[parseStartIx+3])
 			if err != nil {
-				debugLog("NETINFO remoteTwiceNextNodeId err")
+				debugLog("NETINFO remoteTwiceNextNodeID err")
 				return false
 			}
 
 			n.lock.Lock()
-			n.id = remoteNodeId
+			n.id = remoteNodeID
 			n.lock.Unlock()
 
-			updateTwiceNextNodeId(remoteTwiceNextNodeId)
+			updateTwiceNextNodeID(remoteTwiceNextNodeID)
 
-			log(fmt.Sprintf("[%d] Received netinfo: remote_id=0x%X, next_id=0x%X, leader_id=0x%X, twice_next_node_id=0x%X", messageTime, remoteNodeId, nextId, remoteLeaderId, remoteTwiceNextNodeId))
+			log(fmt.Sprintf("[%d] Received netinfo: remote_id=0x%X, next_id=0x%X, leader_id=0x%X, twice_next_node_id=0x%X", messageTime, remoteNodeID, nextID, remoteLeaderID, remoteTwiceNextNodeID))
 
-			log(fmt.Sprintf("Attempting to connect to remote node, id=0x%X", remoteNodeId))
-			nextNode := connectToNode(idToEndpoint(nextId))
+			log(fmt.Sprintf("Attempting to connect to remote node, id=0x%X", remoteNodeID))
+			nextNode := connectToNode(idToEndpoint(nextID))
 			if nextNode == nil {
-				log(fmt.Sprintf("Connection to remote node failed!, id=0x%X", remoteNodeId))
+				log(fmt.Sprintf("Connection to remote node failed!, id=0x%X", remoteNodeID))
 				log("Will now attempt to close the ring")
-				closeRing(nextId)
+				closeRing(nextID)
 			} else {
 				nextNode.lock.Lock()
 				nextNode.r = next
-				nextNode.id = nextId
+				nextNode.id = nextID
 				nextNode.lock.Unlock()
-				log(fmt.Sprintf("Connection to remote node was successful, id=0x%X", nextId))
+				log(fmt.Sprintf("Connection to remote node was successful, id=0x%X", nextID))
 
 				// notify the next node who we are
-				log(fmt.Sprintf("Sending connect message: target_id=0x%X, my_id=0x%X, r=%s", nextNode.id, nodeId, prev))
-				nextNode.sendMessage(connect, strconv.FormatUint(nodeId, 16), string(prev))
+				log(fmt.Sprintf("Sending connect message: target_id=0x%X, my_id=0x%X, r=%s", nextNode.id, nodeID, prev))
+				nextNode.sendMessage(connect, strconv.FormatUint(nodeID, 16), string(prev))
 
 				// if we have connected to somebody we have a ring
 				updateNetworkState(ring)
 			}
 
 			// in case there was a leader in the network
-			if remoteLeaderId != 0 {
-				handleNewLeader(remoteLeaderId)
+			if remoteLeaderID != 0 {
+				handleNewLeader(remoteLeaderID)
 			}
 
 		case closering:
-			senderId, err := stringToId(msg[parseStartIx])
+			senderID, err := stringToID(msg[parseStartIx])
 			if err != nil {
 				debugLog("CLOSERING sender id failure")
 				return false
 			}
 
-			log(fmt.Sprintf("[%d] Received closering: from_id=0x%X, sender_id=0x%X", messageTime, n.id, senderId))
+			log(fmt.Sprintf("[%d] Received closering: from_id=0x%X, sender_id=0x%X", messageTime, n.id, senderID))
 			prevNode := findNodeByRelation(prev)
 
 			if prevNode != nil {
-				if senderId != nodeId {
-					log(fmt.Sprintf("Forwarding closering (from time %d): target_id=0x%X, sender_id=0x%X", messageTime, prevNode.id, senderId))
+				if senderID != nodeID {
+					log(fmt.Sprintf("Forwarding closering (from time %d): target_id=0x%X, sender_id=0x%X", messageTime, prevNode.id, senderID))
 					prevNode.sendMessage(closering, msg[parseStartIx])
 				} else {
 					atomic.StoreUint32(&ringBroken, 0)
-					log(fmt.Sprintf("Closering propagation stopped (from time %d): target_id=0x%X == sender_id=0x%X", messageTime, prevNode.id, senderId))
+					log(fmt.Sprintf("Closering propagation stopped (from time %d): target_id=0x%X == sender_id=0x%X", messageTime, prevNode.id, senderID))
 				}
 			} else {
-				log(fmt.Sprintf("[%d] Received closering without having a prevNode! from_id=0x%X, sender_id=0x%X", messageTime, n.id, senderId))
-				log(fmt.Sprintf("Sending connect message: target_id=0x%X, my_id=0x%X, r=%s", senderId, nodeId, next))
+				log(fmt.Sprintf("[%d] Received closering without having a prevNode! from_id=0x%X, sender_id=0x%X", messageTime, n.id, senderID))
+				log(fmt.Sprintf("Sending connect message: target_id=0x%X, my_id=0x%X, r=%s", senderID, nodeID, next))
 
 				if n.r == none {
 					prevNode = n
 				} else {
-					prevNode = connectToNode(idToEndpoint(senderId))
+					prevNode = connectToNode(idToEndpoint(senderID))
 				}
 
 				if prevNode == nil {
-					log(fmt.Sprintf("Connection to remote node failed!, id=0x%X", senderId))
+					log(fmt.Sprintf("Connection to remote node failed!, id=0x%X", senderID))
 					return false
 				}
 
 				prevNode.lock.Lock()
 				prevNode.r = prev
-				prevNode.id = senderId
+				prevNode.id = senderID
 				prevNode.lock.Unlock()
-				prevNode.sendMessage(connect, idToString(nodeId), string(next))
+				prevNode.sendMessage(connect, idToString(nodeID), string(next))
 				log("Ring repaired (side missing prev)")
 
 				nextNode := findNodeByRelation(next)
@@ -368,70 +368,70 @@ func (n *Node) processMessage(m string) bool {
 			}
 
 		case election:
-			candidateId, err := stringToId(msg[parseStartIx])
+			candidateID, err := stringToID(msg[parseStartIx])
 
 			if err != nil {
 				debugLog("ELECTION candidate id failure")
 				return false
 			}
 
-			if getLeaderId() != 0 {
+			if getLeaderID() != 0 {
 				log("New election detected, removing currently elected leader")
-				updateLeaderId(0)
+				updateLeaderID(0)
 			}
 
-			log(fmt.Sprintf("[%d] Received election, from_id=0x%X, candidate_id=0x%X", messageTime, n.id, candidateId))
+			log(fmt.Sprintf("[%d] Received election, from_id=0x%X, candidate_id=0x%X", messageTime, n.id, candidateID))
 
 			nextNode := findNodeByRelation(next)
 
 			if nextNode == nil {
 				log(fmt.Sprintf("[%d] No nextnode to forward election to! Discarding.", messageTime))
 			} else {
-				if candidateId == nodeId {
+				if candidateID == nodeID {
 					log(fmt.Sprintf("[%d] This node has been elected as a new leader! (candidate_id == my_id)", messageTime))
 
 					log(fmt.Sprintf("[%d] Sending elected to target_id=0x%X", messageTime, nextNode.id))
-					nextNode.sendMessage(elected, idToString(nodeId))
-					handleNewLeader(nodeId)
-				} else if candidateId > nodeId {
-					log(fmt.Sprintf("[%d] Forwarding election (candidate_id > my_id), target_id=0x%X, candidate_id=0x%X", messageTime, nextNode.id, candidateId))
+					nextNode.sendMessage(elected, idToString(nodeID))
+					handleNewLeader(nodeID)
+				} else if candidateID > nodeID {
+					log(fmt.Sprintf("[%d] Forwarding election (candidate_id > my_id), target_id=0x%X, candidate_id=0x%X", messageTime, nextNode.id, candidateID))
 					setElectionParticipated()
 
-					nextNode.sendMessage(election, idToString(candidateId))
+					nextNode.sendMessage(election, idToString(candidateID))
 				} else {
 					log(fmt.Sprintf("[%d] Discarding election (candidate_id < my_id)", messageTime))
 
 					if !hasElectionParticipated() {
 						setElectionParticipated()
-						log(fmt.Sprintf("[%d] Sending election, target_id=0x%X, candidate_id=0x%X", messageTime, nextNode.id, nodeId))
-						nextNode.sendMessage(election, idToString(nodeId))
+						log(fmt.Sprintf("[%d] Sending election, target_id=0x%X, candidate_id=0x%X", messageTime, nextNode.id, nodeID))
+						nextNode.sendMessage(election, idToString(nodeID))
 					}
 				}
 			}
 			resetElectionTimer()
 
 		case elected:
-			newLeaderId, err := stringToId(msg[parseStartIx])
+			newLeaderID, err := stringToID(msg[parseStartIx])
 
 			if err != nil {
 				debugLog("ELECTED new leader id failure")
 				return false
 			}
-			log(fmt.Sprintf("[%d] Received elected, from_id=0x%X, leader_id=0x%X", messageTime, n.id, newLeaderId))
+			log(fmt.Sprintf("[%d] Received elected, from_id=0x%X, leader_id=0x%X", messageTime, n.id, newLeaderID))
 
-			if newLeaderId != nodeId {
+			if newLeaderID != nodeID {
 				nextNode := findNodeByRelation(next)
 
 				if nextNode != nil {
-					log(fmt.Sprintf("[%d] Forwarding elected, target_id=0x%X, leader_id=0x%X", messageTime, nextNode.id, newLeaderId))
-					nextNode.sendMessage(elected, idToString(newLeaderId))
+					log(fmt.Sprintf("[%d] Forwarding elected, target_id=0x%X, leader_id=0x%X", messageTime, nextNode.id, newLeaderID))
+					nextNode.sendMessage(elected, idToString(newLeaderID))
 				} else {
 					log(fmt.Sprintf("[%d] No next node fo forward elected to.", messageTime))
 				}
 
-				handleNewLeader(newLeaderId)
+				handleNewLeader(newLeaderID)
 			} else {
-				log(fmt.Sprintf("[%d] Received elected with leader_id == my_id, stopping propagation, from_id=0x%X, leader_id=0x%X", messageTime, n.id, newLeaderId))
+				log(fmt.Sprintf("[%d] Received elected with leader_id == my_id, stopping propagation, from_id=0x%X, leader_id=0x%X", messageTime, n.id, newLeaderID))
 			}
 
 		case chatmessagesend:
@@ -466,14 +466,14 @@ func (n *Node) processMessage(m string) bool {
 			updateUsers(users)
 
 		case nextinfo:
-			newTwiceNextNodeId, err := stringToId(msg[parseStartIx])
+			newTwiceNextNodeID, err := stringToID(msg[parseStartIx])
 
 			if err != nil {
 				debugLog("NEXTINFO new twice next node id failure")
 				return false
 			}
-			log(fmt.Sprintf("[%d] Received nextinfo, from_id=0x%X, twice_next_node_id=0x%X", messageTime, n.id, newTwiceNextNodeId))
-			updateTwiceNextNodeId(newTwiceNextNodeId)
+			log(fmt.Sprintf("[%d] Received nextinfo, from_id=0x%X, twice_next_node_id=0x%X", messageTime, n.id, newTwiceNextNodeID))
+			updateTwiceNextNodeID(newTwiceNextNodeID)
 
 		case alivecheck:
 			log(fmt.Sprintf("[%d] Received alivecheck (PING), from_id=0x%X", messageTime, n.id))

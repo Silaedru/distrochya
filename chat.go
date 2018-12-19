@@ -8,8 +8,8 @@ import (
 	"time"
 )
 
-var leaderId uint64
-var oldLeaderId uint64
+var leaderID uint64
+var oldLeaderID uint64
 var chatParticipation uint32 = 1
 var chatNameMutex = &sync.Mutex{}
 var chatName = "User"
@@ -22,7 +22,7 @@ var electionStartTriggerFlag uint32
 func startElectionTimer(timeout uint8) {
 	if getNetworkState() == singleNode {
 		log("Attempt to start election timer with networkState==singleNode, assuming leader role")
-		updateLeaderId(nodeId)
+		updateLeaderID(nodeID)
 		return
 	}
 
@@ -39,7 +39,7 @@ func startElectionTimer(timeout uint8) {
 	go func() {
 		<-leaderElectionTimer.C
 
-		if getLeaderId() == 0 {
+		if getLeaderID() == 0 {
 			log("Absence of leader detected")
 			setElectionParticipated()
 
@@ -56,17 +56,17 @@ func startElectionTimer(timeout uint8) {
 					log("Absence of leader detected without having next node: Awaiting ring repair")
 				}
 			} else {
-				log(fmt.Sprintf("Absence of leader detected: sending election, target_id=0x%X, candidate_id=0x%X", nextNode.id, nodeId))
-				nextNode.sendMessage(election, idToString(nodeId))
+				log(fmt.Sprintf("Absence of leader detected: sending election, target_id=0x%X, candidate_id=0x%X", nextNode.id, nodeID))
+				nextNode.sendMessage(election, idToString(nodeID))
 			}
 			resetElectionTimer()
 		}
 	}()
 }
 
-func updateLeaderId(id uint64) {
-	atomic.StoreUint64(&oldLeaderId, getLeaderId())
-	atomic.StoreUint64(&leaderId, id)
+func updateLeaderID(id uint64) {
+	atomic.StoreUint64(&oldLeaderID, getLeaderID())
+	atomic.StoreUint64(&leaderID, id)
 
 	if server == nil {
 		return
@@ -97,12 +97,12 @@ func setElectionParticipated() {
 	atomic.StoreUint32(&electionParticipated, 1)
 }
 
-func getLeaderId() uint64 {
-	return atomic.LoadUint64(&leaderId)
+func getLeaderID() uint64 {
+	return atomic.LoadUint64(&leaderID)
 }
 
-func getOldLeaderId() uint64 {
-	return atomic.LoadUint64(&oldLeaderId)
+func getOldLeaderID() uint64 {
+	return atomic.LoadUint64(&oldLeaderID)
 }
 
 func isElectionStartTriggerFlagSet() bool {
@@ -179,20 +179,20 @@ func connectToLeader() {
 
 	disconnectFromLeader()
 
-	newLeaderId := getLeaderId()
-	newLeader := connectToNode(idToEndpoint(newLeaderId))
+	newLeaderID := getLeaderID()
+	newLeader := connectToNode(idToEndpoint(newLeaderID))
 
 	if newLeader == nil {
-		updateLeaderId(0)
+		updateLeaderID(0)
 		log("Connection to a new leader failed")
 		return
 	}
 
 	newLeader.lock.Lock()
-	newLeader.id = newLeaderId
+	newLeader.id = newLeaderID
 	newLeader.r = leader
 	newLeader.lock.Unlock()
-	newLeader.sendMessage(connect, idToString(nodeId), string(follower), getChatName())
+	newLeader.sendMessage(connect, idToString(nodeID), string(follower), getChatName())
 
 	setConnectedName(getChatName())
 }
@@ -215,9 +215,9 @@ func handleNewLeader(id uint64) {
 	defer updateStatus()
 
 	resetChatConnections()
-	updateLeaderId(id)
+	updateLeaderID(id)
 
-	log(fmt.Sprintf("New leader elected, nodeId=0x%X", id))
+	log(fmt.Sprintf("New leader elected, nodeID=0x%X", id))
 
 	if getChatParticipation() == 1 {
 		connectToLeader()

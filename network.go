@@ -25,7 +25,7 @@ const (
 	// messages
 	// magic;message;params\n
 	sepchar         = ";"
-	magic           = "d"
+	magic           = "DISTROCHYA-R1"
 	connect         = "connect"     // params=id;requested_relation;params
 	netinfo         = "netinfo"     // params=node_id;next_id;leader_id
 	closering       = "closering"   // params=sender_id
@@ -34,8 +34,8 @@ const (
 	userlist        = "userlist"    // params=[users]
 	chatmessage     = "chatmessage" // params=user;message
 	chatmessagesend = "chmsgsend"   // params=message
-	nextinfo        = "nextinfo"    //params=next_id
-	alivecheck      = "alivecheck"  //no params
+	nextinfo        = "nextinfo"    // params=next_id
+	alivecheck      = "alivecheck"  // no params
 	aliveresponse   = "aliveresp"   // no params
 
 	// network states
@@ -58,8 +58,8 @@ var networkStateMutex = &sync.Mutex{}
 
 var server net.Listener
 var networkState = noNetwork
-var nodeId uint64
-var twiceNextNodeId uint64
+var nodeID uint64
+var twiceNextNodeID uint64
 var nodes *nodeSyncLinkedList
 
 var ringBroken uint32 = 0 // atomic, not guarded by mutex
@@ -72,8 +72,8 @@ func updateNetworkState(s string) {
 
 	if s == singleNode {
 		log("NETWORK STATE CHANGED TO SINGLE NODE, ASSUMING LEADER ROLE")
-		handleNewLeader(nodeId)
-		updateTwiceNextNodeId(0)
+		handleNewLeader(nodeID)
+		updateTwiceNextNodeID(0)
 	}
 }
 
@@ -86,12 +86,12 @@ func getNetworkState() string {
 	return rtn
 }
 
-func updateTwiceNextNodeId(id uint64) {
-	atomic.StoreUint64(&twiceNextNodeId, id)
+func updateTwiceNextNodeID(id uint64) {
+	atomic.StoreUint64(&twiceNextNodeID, id)
 }
 
-func getTwiceNextNodeId() uint64 {
-	return atomic.LoadUint64(&twiceNextNodeId)
+func getTwiceNextNodeID() uint64 {
+	return atomic.LoadUint64(&twiceNextNodeID)
 }
 
 func resetNode() {
@@ -99,9 +99,9 @@ func resetNode() {
 	defer networkGlobalsMutex.Unlock()
 
 	server = nil
-	nodeId = 0
-	updateTwiceNextNodeId(0)
-	updateLeaderId(0)
+	nodeID = 0
+	updateTwiceNextNodeID(0)
+	updateLeaderID(0)
 	resetChatConnections()
 	updateUsers(nil)
 	resetConnectedName()
@@ -123,8 +123,8 @@ func initNode(ip uint32, p uint16) {
 	resetTime()
 	updateUsers(nil)
 
-	nodeId = createNodeId(ip, p, uint16(rand.Uint32()))
-	updateTwiceNextNodeId(0)
+	nodeID = createNodeID(ip, p, uint16(rand.Uint32()))
+	updateTwiceNextNodeID(0)
 	nodes = newNodeSyncLinkedList()
 }
 
@@ -158,7 +158,7 @@ func idToString(id uint64) string {
 	return strconv.FormatUint(id, 16)
 }
 
-func stringToId(s string) (uint64, error) {
+func stringToID(s string) (uint64, error) {
 	return strconv.ParseUint(s, 16, 64)
 }
 
@@ -191,7 +191,7 @@ func broadcastToFollowers(m ...string) {
 	}
 }
 
-func closeRing(oldNextNodeId uint64) {
+func closeRing(oldNextNodeID uint64) {
 	if atomic.LoadUint32(&ringBroken) == 1 {
 		return
 	}
@@ -207,19 +207,19 @@ func closeRing(oldNextNodeId uint64) {
 	} else {
 		prevNode.lock.Lock()
 
-		if prevNode.id == oldNextNodeId {
+		if prevNode.id == oldNextNodeID {
 			prevNode.lock.Unlock()
 			updateNetworkState(singleNode)
 		} else {
 			atomic.StoreUint32(&ringBroken, 1)
 			prevNode.lock.Unlock()
 
-			twiceNextNodeId := getTwiceNextNodeId()
-			twiceNextNode := connectToNode(idToEndpoint(twiceNextNodeId))
+			twiceNextNodeID := getTwiceNextNodeID()
+			twiceNextNode := connectToNode(idToEndpoint(twiceNextNodeID))
 
 			if twiceNextNode != nil {
 				twiceNextNode.lock.Lock()
-				twiceNextNode.id = twiceNextNodeId
+				twiceNextNode.id = twiceNextNodeID
 				//twiceNextNode.r = next
 				//twiceNextNode.lock.Unlock()
 			} else {
@@ -232,8 +232,8 @@ func closeRing(oldNextNodeId uint64) {
 					for atomic.LoadUint32(&ringBroken) == 1 && prevNode.connected {
 						prevNode.lock.Unlock()
 						log("Broken ring detected with failure to connect to twiceNextNode")
-						log(fmt.Sprintf("Sending closering: target_id=0x%X, sender_id=0x%X", prevNode.id, nodeId))
-						prevNode.sendMessage(closering, idToString(nodeId))
+						log(fmt.Sprintf("Sending closering: target_id=0x%X, sender_id=0x%X", prevNode.id, nodeID))
+						prevNode.sendMessage(closering, idToString(nodeID))
 						time.Sleep(ringRepairTimeoutSeconds * time.Second)
 						prevNode.lock.Lock()
 					}
@@ -242,8 +242,8 @@ func closeRing(oldNextNodeId uint64) {
 					for atomic.LoadUint32(&ringBroken) == 1 && twiceNextNode.connected {
 						twiceNextNode.lock.Unlock()
 						log("Broken ring detected with successful connection to twiceNextNode")
-						log(fmt.Sprintf("Sending closering: target_id=0x%X, sender_id=0x%X", twiceNextNodeId, nodeId))
-						twiceNextNode.sendMessage(closering, idToString(nodeId))
+						log(fmt.Sprintf("Sending closering: target_id=0x%X, sender_id=0x%X", twiceNextNodeID, nodeID))
+						twiceNextNode.sendMessage(closering, idToString(nodeID))
 						time.Sleep(ringRepairTimeoutSeconds * time.Second)
 						twiceNextNode.lock.Lock()
 					}
@@ -267,12 +267,12 @@ func findNodeByRelation(r relation) *Node {
 	return rtn
 }
 
-func findNodeByRelationExcludingId(r relation, id uint64) *Node {
+func findNodeByRelationExcludingID(r relation, id uint64) *Node {
 	networkGlobalsMutex.Lock()
 
 	var rtn *Node
 	if nodes != nil {
-		rtn = nodes.findSingleByRelationExcludingId(r, id)
+		rtn = nodes.findSingleByRelationExcludingID(r, id)
 	}
 
 	networkGlobalsMutex.Unlock()
@@ -298,7 +298,7 @@ func addNode(n *Node) {
 	}
 }
 
-func createNodeId(i uint32, p uint16, f uint16) uint64 {
+func createNodeID(i uint32, p uint16, f uint16) uint64 {
 	return uint64(i)<<32 | uint64(p)<<16 | uint64(f)
 }
 
@@ -339,7 +339,7 @@ func startServer(p uint16, newNetwork bool, resultChan chan bool) {
 	server = l
 	networkGlobalsMutex.Unlock()
 
-	log(fmt.Sprintf("Server started, listening on port %d. nodeId=0x%X", p, nodeId))
+	log(fmt.Sprintf("Server started, listening on port %d. nodeID=0x%X", p, nodeID))
 	userEvent(fmt.Sprintf("listening on port %d", p))
 
 	if newNetwork {
@@ -399,8 +399,8 @@ func joinNetwork(a string, p uint16) {
 		}
 		node.r = prev
 
-		log(fmt.Sprintf("Sending connect message: address=%s, my_id=0x%X, r=%s", a, nodeId, none))
-		node.sendMessage(connect, idToString(nodeId), string(none))
+		log(fmt.Sprintf("Sending connect message: address=%s, my_id=0x%X, r=%s", a, nodeID, none))
+		node.sendMessage(connect, idToString(nodeID), string(none))
 	} else {
 		resetNode()
 	}

@@ -82,7 +82,7 @@ func (l *nodeSyncLinkedList) findSingleByRelation(r relation) *Node {
 	return nil
 }
 
-func (l *nodeSyncLinkedList) findSingleByRelationExcludingId(r relation, id uint64) *Node {
+func (l *nodeSyncLinkedList) findSingleByRelationExcludingID(r relation, id uint64) *Node {
 	l.lock.Lock()
 	defer l.lock.Unlock()
 

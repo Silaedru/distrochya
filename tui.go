@@ -175,9 +175,9 @@ func updateStatus() {
 			"          Leader ID: \x1b[33;1m0x%X\x1b[0m (%s)\n"+
 			"\n"+
 			" Connected nodes:\n%s\n\n   ----- END -----", readTime(),
-			getNetworkState(), nodeId, idToEndpoint(nodeId), getTwiceNextNodeId(),
-			idToEndpoint(getTwiceNextNodeId()), getLeaderId(),
-			idToEndpoint(getLeaderId()), nodesStr))
+			getNetworkState(), nodeID, idToEndpoint(nodeID), getTwiceNextNodeID(),
+			idToEndpoint(getTwiceNextNodeID()), getLeaderID(),
+			idToEndpoint(getLeaderID()), nodesStr))
 
 		networkGlobalsMutex.Unlock()
 	}()
