@@ -117,7 +117,10 @@ func initCommands() {
 			}
 
 			nickStr := strings.Replace(nick.String(), ";", "", -1)
-			setChatName(nickStr)
+
+			if len(nickStr) > 0 {
+				setChatName(nickStr)
+			}
 		}
 
 		appendChatView(fmt.Sprintf("\x1b[35mNickname: %s\x1b[0m", getChatName()))
