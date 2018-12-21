@@ -1,8 +1,6 @@
 package main
 
-import (
-	"sync"
-)
+import "sync"
 
 var currentTime uint64 = 0
 var timeLock = &sync.Mutex{}

@@ -19,7 +19,7 @@ type command struct {
 const debugLogEnabled = false
 
 var debugEnabled = true
-var commands map[string]*command
+var commands = make(map[string]*command)
 
 func processCommand(name string, args []string) {
 	command := commands[name]
@@ -57,8 +57,6 @@ func chatMessageReceived(u string, s string) {
 }
 
 func initCommands() {
-	commands = make(map[string]*command)
-
 	commands["/help"] = &command{"Prints this message.", "                       ", func(args []string) {
 		msg := "\nAvailable commands:"
 

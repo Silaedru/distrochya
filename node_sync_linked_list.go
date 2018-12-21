@@ -21,20 +21,10 @@ func (l *nodeSyncLinkedList) add(n *Node) {
 	l.lock.Lock()
 	defer l.lock.Unlock()
 
-	newNode := &nodeSyncLinkedListNode{n, nil}
+	newNode := &nodeSyncLinkedListNode{n, l.head}
 
-	if l.head == nil {
-		l.head = newNode
-	} else {
-		cn := l.head
-
-		for cn.next != nil {
-			cn = cn.next
-		}
-
-		cn.next = newNode
-	}
-
+	l.head = newNode
+	
 	l.size++
 }
 
