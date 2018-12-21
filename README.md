@@ -8,7 +8,7 @@ Depends on [gocui](https://github.com/jroimartin/gocui) for UI.
  * A node needs to start a new network - when it does so, it's automatically elected as its leader
  * When a new node connects, it becomes the new successor to the *known* node (which it used to join the network)
  * Virtual ring used for leader election is separate from virtual star used for chatting
- * When a node's successor is lost, it tries to connect to the old successor's successor first (if that fails, it sends ```repairring``` request through previous node)
+ * When a node's successor is lost, it tries to connect to the old successor's successor first (if that fails, it sends ```closering``` request through previous node)
  * When a leader is lost, each node waits a random amount of time before starting a new election, except for the old leader's predecessor, which starts election immediately once it detects that the ring topology has been fixed
 
 ## Limitations:
