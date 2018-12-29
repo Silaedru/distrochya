@@ -49,7 +49,7 @@ const (
 	leaderElectionTimeoutSeconds     = 5
 	leaderElectionMinimumWaitSeconds = 3
 	leaderElectionMaximumWaitSeconds = 15
-	connectionTimeoutSeconds         = 30
+	connectionTimeoutSeconds         = 20
 	connectionTimeoutGraceSeconds    = 5
 )
 

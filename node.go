@@ -164,16 +164,14 @@ func (n *Node) handleConnection() {
 
 	r := bufio.NewReader(n.connection)
 
+	n.resetKeepAliveTimer()
+
 	for n.connected {
 		updateStatus()
 
-		n.resetKeepAliveTimer()
 		n.connection.SetReadDeadline(time.Now().Add((connectionTimeoutSeconds + connectionTimeoutGraceSeconds) * time.Second))
 		data, err := r.ReadString('\n')
 		n.connection.SetReadDeadline(zeroTime)
-		n.katLock.Lock()
-		n.kat.Stop()
-		n.katLock.Unlock()
 
 		if err != nil {
 			log(fmt.Sprintf("Client 0x%X disconnected, r=%s", n.id, n.r))
@@ -221,7 +219,7 @@ func (n *Node) resetKeepAliveTimer() {
 	}
 
 	if n.connected {
-		n.kat = time.AfterFunc(connectionTimeoutSeconds/3*time.Second, n.keepAlive)
+		n.kat = time.AfterFunc(connectionTimeoutSeconds/2*time.Second, n.keepAlive)
 	}
 }
 
